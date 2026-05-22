@@ -20,15 +20,19 @@ import type {
 } from "./context";
 import { SupabaseWriter } from "./writer";
 import { FORMULA_REGISTRY } from "@/lib/calc/formulas";
-import { Ord01Trituracion }   from "@/lib/calc/procesos/ord01_trituracion";
-import { Ord02Adiciones }     from "@/lib/calc/procesos/ord02_adiciones";
-import { Ord03MoliendaCrudo } from "@/lib/calc/procesos/ord03_molienda_crudo";
+import { Ord01Trituracion }    from "@/lib/calc/procesos/ord01_trituracion";
+import { Ord02Adiciones }      from "@/lib/calc/procesos/ord02_adiciones";
+import { Ord03MoliendaCrudo }  from "@/lib/calc/procesos/ord03_molienda_crudo";
+import { Ord04MoliendaCarbon } from "@/lib/calc/procesos/ord04_molienda_carbon";
+import { Ord05Clinkerizacion } from "@/lib/calc/procesos/ord05_clinkerizacion";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
 const CALCULADORES: Record<number, ProcesoCalculator> = {
   1: new Ord01Trituracion(),
   2: new Ord02Adiciones(),
   3: new Ord03MoliendaCrudo(),
+  4: new Ord04MoliendaCarbon(),
+  5: new Ord05Clinkerizacion(),
 };
 
 export interface RunOptions {
