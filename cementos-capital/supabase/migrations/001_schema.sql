@@ -108,9 +108,9 @@ create table precios_insumos (
   moneda          char(3) not null default 'COP',
   observaciones   text,
   creado_en       timestamptz not null default now(),
-  creado_por      uuid references auth.users(id),
-  unique (version_id, material_id, coalesce(proveedor,''), periodo)
+  creado_por      uuid references auth.users(id)
 );
+create unique index on precios_insumos (version_id, material_id, coalesce(proveedor,''), periodo);
 create index on precios_insumos (version_id, periodo);
 
 create table porcentajes_consumo (
@@ -192,9 +192,9 @@ create table ventas_proyectadas (
   presentacion varchar(50),
   periodo date not null,
   cantidad_ton decimal(12,2) not null,
-  precio_venta decimal(18,2),
-  unique (version_id, material_id, coalesce(presentacion,''), periodo)
+  precio_venta decimal(18,2)
 );
+create unique index on ventas_proyectadas (version_id, material_id, coalesce(presentacion,''), periodo);
 
 create table parametros_energia (
   id uuid primary key default gen_random_uuid(),
