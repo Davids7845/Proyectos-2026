@@ -3,12 +3,14 @@ import { definition as costoCalizaMartillo } from "./costo_caliza_martillo";
 import { definition as costoPrehomo }        from "./costo_prehomo";
 import { definition as costoMezclaPonderada } from "./costo_mezcla_ponderada";
 import { definition as costoProcesoSuma } from "./costo_proceso_suma";
+import { definition as costoMpReceta } from "./costo_mp_receta";
 
 export const FORMULA_REGISTRY: Record<string, FormulaDefinition> = {
   [costoCalizaMartillo.codigo]: costoCalizaMartillo,
   [costoPrehomo.codigo]:        costoPrehomo,
   [costoMezclaPonderada.codigo]: costoMezclaPonderada,
   [costoProcesoSuma.codigo]:    costoProcesoSuma,
+  [costoMpReceta.codigo]:       costoMpReceta,
 };
 
 export function getFormula(codigo: string): FormulaDefinition {
