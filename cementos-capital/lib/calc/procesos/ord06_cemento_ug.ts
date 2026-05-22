@@ -1,5 +1,5 @@
-// ORD 5 — Clinkerización (producto: CLINKER)
-// Receta: HARINACRUD (arrastre ORD 3) + CARBONMOL (arrastre ORD 4) + directos.
+// ORD 6 — Cemento UG (granel)
+// Receta típica: CLINKER (arrastre ORD 5) + Yeso + Puzolana + Adit. molienda + Caliza.
 
 import { runRecetaProcess } from "./_receta_base";
 import type {
@@ -12,12 +12,11 @@ import type {
 } from "@/lib/calc/engine/context";
 
 const DERIVED_BY_CODIGO: Record<string, number> = {
-  HARINACRUD: 3,
-  CARBONMOL:  4,
+  CLINKER001: 5,
 };
 
-export class Ord05Clinkerizacion implements ProcesoCalculator {
-  ord = 5;
+export class Ord06CementoUg implements ProcesoCalculator {
+  ord = 6;
 
   async run(args: {
     ctx: CalcContext;
@@ -26,10 +25,10 @@ export class Ord05Clinkerizacion implements ProcesoCalculator {
     writer: CalcWriter;
   }): Promise<ProcesoResult> {
     return runRecetaProcess(args, {
-      errPrefix: "ORD5",
-      productoNombre: "Clinker",
-      calculoTipoMp: "costo_mp_clinker",
-      conceptoMp: "Costo Materia Prima — Clinker",
+      errPrefix: "ORD6",
+      productoNombre: "Cemento UG",
+      calculoTipoMp: "costo_mp_cemento_ug",
+      conceptoMp: "Costo Materia Prima — Cemento UG",
       derivedByCodigo: DERIVED_BY_CODIGO,
     });
   }

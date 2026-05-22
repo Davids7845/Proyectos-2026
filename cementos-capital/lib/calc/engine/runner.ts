@@ -25,6 +25,8 @@ import { Ord02Adiciones }      from "@/lib/calc/procesos/ord02_adiciones";
 import { Ord03MoliendaCrudo }  from "@/lib/calc/procesos/ord03_molienda_crudo";
 import { Ord04MoliendaCarbon } from "@/lib/calc/procesos/ord04_molienda_carbon";
 import { Ord05Clinkerizacion } from "@/lib/calc/procesos/ord05_clinkerizacion";
+import { Ord06CementoUg }      from "@/lib/calc/procesos/ord06_cemento_ug";
+import { Ord07CementoArt }     from "@/lib/calc/procesos/ord07_cemento_art";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
 const CALCULADORES: Record<number, ProcesoCalculator> = {
@@ -33,6 +35,8 @@ const CALCULADORES: Record<number, ProcesoCalculator> = {
   3: new Ord03MoliendaCrudo(),
   4: new Ord04MoliendaCarbon(),
   5: new Ord05Clinkerizacion(),
+  6: new Ord06CementoUg(),
+  7: new Ord07CementoArt(),
 };
 
 export interface RunOptions {
