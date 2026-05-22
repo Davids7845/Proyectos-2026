@@ -78,6 +78,7 @@ function buildContext(periodo: string, params: {
     formulaIdByCodigo: new Map([
       ["COSTO_CALIZA_MARTILLO_v1", "f-1"],
       ["COSTO_PREHOMO_v1",         "f-2"],
+      ["COSTO_PROCESO_SUMA_v1",    "f-3"],
     ]),
     costoProcesoByKey: new Map(),
   };
