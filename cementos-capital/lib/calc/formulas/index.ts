@@ -1,10 +1,12 @@
 import type { FormulaDefinition } from "../engine/types";
 import { definition as costoCalizaMartillo } from "./costo_caliza_martillo";
 import { definition as costoPrehomo }        from "./costo_prehomo";
+import { definition as costoMezclaPonderada } from "./costo_mezcla_ponderada";
 
 export const FORMULA_REGISTRY: Record<string, FormulaDefinition> = {
   [costoCalizaMartillo.codigo]: costoCalizaMartillo,
   [costoPrehomo.codigo]:        costoPrehomo,
+  [costoMezclaPonderada.codigo]: costoMezclaPonderada,
 };
 
 export function getFormula(codigo: string): FormulaDefinition {
@@ -13,4 +15,4 @@ export function getFormula(codigo: string): FormulaDefinition {
   return f;
 }
 
-export { costoCalizaMartillo, costoPrehomo };
+export { costoCalizaMartillo, costoPrehomo, costoMezclaPonderada };

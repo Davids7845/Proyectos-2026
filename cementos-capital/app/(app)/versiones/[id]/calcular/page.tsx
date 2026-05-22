@@ -27,11 +27,11 @@ export default async function CalcularPage({
     .maybeSingle();
 
   // Costos por proceso del último run
-  let costos: Array<{ proceso: string; ord: number; periodo: string; costo_por_ton: number; costo_total: number }> = [];
+  let costos: Array<{ proceso: string; ord: number; periodo: string; costo_por_ton: number; costo_total: number; calc_total_id: string | null }> = [];
   if (lastRun) {
     const { data } = await supabase
       .from("costo_proceso")
-      .select("periodo, costo_total, costo_por_ton, proceso:procesos(nombre, ord)")
+      .select("periodo, costo_total, costo_por_ton, calc_total_id, proceso:procesos(nombre, ord)")
       .eq("run_id", lastRun.id)
       .order("periodo");
     costos = (data ?? []).map((r: any) => ({
@@ -40,6 +40,7 @@ export default async function CalcularPage({
       periodo: r.periodo,
       costo_por_ton: Number(r.costo_por_ton),
       costo_total: Number(r.costo_total),
+      calc_total_id: r.calc_total_id,
     }));
   }
 
@@ -93,6 +94,7 @@ export default async function CalcularPage({
                   <th className="px-3 py-2 text-left font-medium text-gray-600">Periodo</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-600">Costo/Ton (COP)</th>
                   <th className="px-3 py-2 text-right font-medium text-gray-600">Costo Total (COP)</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-600">Traza</th>
                 </tr>
               </thead>
               <tbody>
@@ -103,6 +105,15 @@ export default async function CalcularPage({
                     <td className="px-3 py-2 text-gray-500 tabular-nums">{c.periodo}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{c.costo_por_ton.toLocaleString("es-CO", { maximumFractionDigits: 2 })}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{c.costo_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2">
+                      {c.calc_total_id ? (
+                        <Link href={`/versiones/${id}/calculos/${c.calc_total_id}`} className="text-xs text-blue-600 hover:underline">
+                          ver árbol →
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
