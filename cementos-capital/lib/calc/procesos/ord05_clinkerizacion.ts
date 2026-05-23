@@ -14,6 +14,7 @@ import type {
 const DERIVED_BY_CODIGO: Record<string, number> = {
   HARINACRUD: 3,
   CARBONMOL:  4,
+  COMBALT:   20, // combustibles alternos (ORD 20) — si aparece en la receta
 };
 
 export class Ord05Clinkerizacion implements ProcesoCalculator {

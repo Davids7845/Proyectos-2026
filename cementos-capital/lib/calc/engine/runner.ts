@@ -34,7 +34,9 @@ import { Ord11CementoArt42 }    from "@/lib/calc/procesos/ord11_cemento_art_42";
 import { Ord14CementoTopex50 }  from "@/lib/calc/procesos/ord14_cemento_topex_50";
 import { Ord15CementoUgTp }     from "@/lib/calc/procesos/ord15_cemento_ug_tp";
 import { Ord16Fibrocemento }    from "@/lib/calc/procesos/ord16_fibrocemento";
-import { Ord19CementoBigBag }   from "@/lib/calc/procesos/ord19_cemento_bigbag";
+import { Ord19CementoBigBag }          from "@/lib/calc/procesos/ord19_cemento_bigbag";
+import { Ord20CombustiblesAlternos }   from "@/lib/calc/procesos/ord20_combustibles_alternos";
+import { Ord21Cementos }               from "@/lib/calc/procesos/ord21_cementos";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
 const CALCULADORES: Record<number, ProcesoCalculator> = {
@@ -53,6 +55,8 @@ const CALCULADORES: Record<number, ProcesoCalculator> = {
   15: new Ord15CementoUgTp(),
   16: new Ord16Fibrocemento(),
   19: new Ord19CementoBigBag(),
+  20: new Ord20CombustiblesAlternos(),
+  21: new Ord21Cementos(),
 };
 
 export interface RunOptions {
