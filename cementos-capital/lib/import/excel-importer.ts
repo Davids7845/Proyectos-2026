@@ -11,64 +11,69 @@ import type {
 } from "./types";
 
 // ─────────────────────────────────────────────────────────────────
-// Configuración: estructura de la hoja "Datos"
+// Layout de la hoja "Datos" (Nueva_Plantilla_Ppto_CV_V2.xlsx)
+//
+// El sheet arranca en B1 (col A vacía). Al pasarlo por sheet_to_json
+// los índices quedan así:
+//   row[0] = col B = Tipo / Concepto / Material
+//   row[1] = col C = UM (unidad)
+//   row[2..N] = cols D..S = periodos (16 fechas, sólo usamos los 12 primeros)
+//
+// Secciones reconocidas (col B exactamente igual, col C vacía):
+//   Precios · % Consumo · Recetas · Humedades · Rotura · Ventas ·
+//   Rendimiento · Indicadores · Energía · Combustibles ·
+//   Energía Térmica · Inventarios
+//
+// Por ahora parseamos: Precios, % Consumo, Recetas (incluye empaque),
+// Humedades. Las otras secciones se ignoran con warning.
 // ─────────────────────────────────────────────────────────────────
 
 const SHEET_NAME = "Datos";
 
-// Columna donde inician los periodos (D = idx 3 en 0-based)
-// Las primeras 3 columnas son: A=ORD?, B=Concepto, C=Unidad/Proveedor
-const FIRST_PERIOD_COL_IDX = 3;
+const CONCEPTO_COL = 0;          // col B
+const UNIDAD_COL = 1;             // col C
+const FIRST_PERIOD_COL = 2;       // col D
+const MAX_PERIODS = 12;           // 12 meses del presupuesto (Sep2025–Ago2026)
 
-// Sólo usamos los primeros 12 periodos (Sep-2025 a Ago-2026); ignoramos el 13.°
-const MAX_PERIODS = 12;
+const SECTION_NAMES = new Set([
+  "Precios",
+  "% Consumo",
+  "Recetas",
+  "Humedades",
+  "Rotura",
+  "Ventas",
+  "Rendimiento",
+  "Indicadores",
+  "Energía",
+  "Combustibles",
+  "Energía Térmica",
+  "Inventarios",
+]);
 
-// Filas del Excel con precios de insumos clave (1-based, según análisis previo).
-// Si la plantilla cambia, ajustar aquí.
-const FILAS_PRECIOS_CONOCIDAS: Array<{
-  row: number;
-  material: string;
-  unidad: string;
-  proveedor?: string | null;
-}> = [
-  // Row 3 es CALCULADA (caliza + martillo ponderado) → no se importa
-  { row: 4,  material: "Caliza Explotada",   unidad: "COP/Ton" },
-  { row: 6,  material: "Costo Adicional Martillo", unidad: "COP/Ton" },
-  { row: 7,  material: "Arcilla Explotada",  unidad: "COP/Ton" },
-  // Las siguientes filas son orientativas — el parser usa el texto de la celda B como ground truth
-];
-
-// Inicio de la sección "% Consumo" (rows ~128–135 según análisis previo)
-const SECCION_PCT_CONSUMO_INICIO = 128;
-const SECCION_PCT_CONSUMO_FIN = 140;
-
-// Inicio de la sección "Recetas" / Humedades (orientativo, se detecta por keyword en col B)
-const KEYWORDS_RECETA = ["receta", "consumo "];
-const KEYWORDS_HUMEDAD = ["humedad"];
+// Patrón de receta: "<material> En <producto>"
+const RECETA_PATTERN = /^(.+?)\s+En\s+(.+)$/i;
+// Patrón de empaque: "Sacos para <producto>"  ó "Cargue clinker a Tolva"
+const SACOS_PATTERN = /^Sacos para\s+(.+)$/i;
 
 // ─────────────────────────────────────────────────────────────────
 // Utilidades
 // ─────────────────────────────────────────────────────────────────
 
-/** Limpia texto: strip + colapsa espacios + remueve tab inicial. */
 function cleanText(v: unknown): string {
   if (v == null) return "";
   return String(v).replace(/\s+/g, " ").trim();
 }
 
-/** Convierte serial Excel o ISO a "YYYY-MM-01". null si no parsea. */
 function cellToPeriodo(v: unknown): Periodo | null {
   if (v == null || v === "") return null;
   let d: Date | null = null;
   if (typeof v === "number") {
-    // serial Excel: 1900-based, días desde 1899-12-30
     const ms = (v - 25569) * 86400 * 1000;
     d = new Date(ms);
   } else if (v instanceof Date) {
     d = v;
   } else {
-    const s = String(v).trim();
-    const parsed = new Date(s);
+    const parsed = new Date(String(v).trim());
     if (!isNaN(parsed.getTime())) d = parsed;
   }
   if (!d || isNaN(d.getTime())) return null;
@@ -77,7 +82,6 @@ function cellToPeriodo(v: unknown): Periodo | null {
   return `${yyyy}-${mm}-01`;
 }
 
-/** Convierte a number; null si vacío/no numérico. */
 function cellToNumber(v: unknown): number | null {
   if (v == null || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -87,12 +91,32 @@ function cellToNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Lee celda (0-based row, 0-based col) de un sheet a array-of-arrays. */
 type Sheet2D = unknown[][];
+
 function getCell(sheet: Sheet2D, row0: number, col0: number): unknown {
   const r = sheet[row0];
   if (!r) return undefined;
   return r[col0];
+}
+
+function isSectionHeader(sheet: Sheet2D, row0: number): string | null {
+  const concepto = cleanText(getCell(sheet, row0, CONCEPTO_COL));
+  if (!concepto || !SECTION_NAMES.has(concepto)) return null;
+  const unidad = cleanText(getCell(sheet, row0, UNIDAD_COL));
+  if (unidad !== "") return null;
+  return concepto;
+}
+
+function emptyParsed(errors: ImportError[], warnings: ImportWarning[]): ParsedExcel {
+  return {
+    periodos: [],
+    precios: [],
+    porcentajes_consumo: [],
+    recetas: [],
+    humedades: [],
+    errors,
+    warnings,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -103,7 +127,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
   const errors: ImportError[] = [];
   const warnings: ImportWarning[] = [];
 
-  const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+  const wb = XLSX.read(buffer, { type: "array", cellDates: false });
   const sheetName = wb.SheetNames.find(n => n.toLowerCase() === SHEET_NAME.toLowerCase());
   if (!sheetName) {
     errors.push({
@@ -120,15 +144,14 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     defval: null,
   }) as Sheet2D;
 
-  // Fila de cabeceras de periodos: en el Excel suele ser fila 1 o 2.
-  // Buscamos la primera fila que tenga una fecha en col D.
+  // ─── Periodos: primera fila con fecha en col D ───
   const periodos: Periodo[] = [];
   let headerRow0 = -1;
   for (let r = 0; r < Math.min(sheet.length, 10); r++) {
-    const cand = cellToPeriodo(getCell(sheet, r, FIRST_PERIOD_COL_IDX));
+    const cand = cellToPeriodo(getCell(sheet, r, FIRST_PERIOD_COL));
     if (cand) {
       headerRow0 = r;
-      for (let c = FIRST_PERIOD_COL_IDX; c < FIRST_PERIOD_COL_IDX + MAX_PERIODS; c++) {
+      for (let c = FIRST_PERIOD_COL; c < FIRST_PERIOD_COL + MAX_PERIODS; c++) {
         const p = cellToPeriodo(getCell(sheet, r, c));
         if (p) periodos.push(p);
         else break;
@@ -141,7 +164,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     errors.push({
       seccion: "general",
       row_excel: null,
-      mensaje: "No se detectó fila de cabeceras de periodos (columnas D..O esperadas con fechas).",
+      mensaje: "No se detectó fila de cabeceras de periodos (esperado: cols D..O con fechas).",
     });
     return emptyParsed(errors, warnings);
   }
@@ -149,136 +172,148 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     warnings.push({
       seccion: "general",
       row_excel: headerRow0 + 1,
-      mensaje: `Se detectaron ${periodos.length} periodos (esperados ${MAX_PERIODS}).`,
+      mensaje: `Sólo ${periodos.length} periodos detectados (esperados ${MAX_PERIODS}).`,
     });
   }
 
-  // ──────────────── Precios ────────────────
+  // ─── Mapeo de secciones: nombre → [row_inicio_0based, row_fin_0based_excl] ───
+  const sections = new Map<string, [number, number]>();
+  let currentName: string | null = null;
+  let currentStart = -1;
+  for (let r = headerRow0 + 1; r < sheet.length; r++) {
+    const name = isSectionHeader(sheet, r);
+    if (name) {
+      if (currentName) sections.set(currentName, [currentStart, r]);
+      currentName = name;
+      currentStart = r + 1;
+    }
+  }
+  if (currentName) sections.set(currentName, [currentStart, sheet.length]);
+
+  // Confirma secciones esperadas
+  for (const sec of ["Precios", "% Consumo", "Recetas", "Humedades"]) {
+    if (!sections.has(sec)) {
+      warnings.push({ seccion: "general", row_excel: null, mensaje: `Sección "${sec}" no encontrada` });
+    }
+  }
+
+  // ─── Precios ───
   const precios: PrecioParsed[] = [];
-  for (const def of FILAS_PRECIOS_CONOCIDAS) {
-    const r0 = def.row - 1;
-    const conceptoCelda = cleanText(getCell(sheet, r0, 1));
-    if (!conceptoCelda) {
-      warnings.push({
-        seccion: "precios",
-        row_excel: def.row,
-        mensaje: `Fila ${def.row} vacía en col B (esperado: "${def.material}")`,
-      });
-      continue;
-    }
-    for (let i = 0; i < periodos.length; i++) {
-      const valor = cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i));
-      if (valor == null) continue;
-      precios.push({
-        material_nombre: conceptoCelda,
-        proveedor: def.proveedor ?? null,
-        periodo: periodos[i],
-        precio: valor,
-        unidad: def.unidad,
-        row_excel: def.row,
-      });
-    }
-  }
-
-  // Barrido genérico: filas entre la header y la sección %Consumo.
-  // Detecta cualquier fila con texto en col B y valores numéricos en columnas de periodo.
-  const inicioBarrido = headerRow0 + 1;
-  const finBarrido = SECCION_PCT_CONSUMO_INICIO - 1;
-  const filasYaCapturadas = new Set(FILAS_PRECIOS_CONOCIDAS.map(f => f.row));
-
-  for (let r0 = inicioBarrido; r0 < Math.min(sheet.length, finBarrido); r0++) {
-    if (filasYaCapturadas.has(r0 + 1)) continue;
-    const concepto = cleanText(getCell(sheet, r0, 1));
-    if (!concepto) continue;
-    // Si la fila parece un encabezado/sección (todo mayúsculas largas sin números), ignorar.
-    const tieneNumeros = periodos.some((_, i) =>
-      cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i)) != null
-    );
-    if (!tieneNumeros) continue;
-    // Saltar filas reservadas a porcentajes/recetas detectadas más abajo.
-    const lower = concepto.toLowerCase();
-    if (KEYWORDS_RECETA.some(k => lower.includes(k))) continue;
-    if (KEYWORDS_HUMEDAD.some(k => lower.includes(k))) continue;
-    // Heurística: filas de precios suelen tener "explotada", "costo", "energía", "precio" en el nombre.
-    // Aceptamos cualquiera con valores numéricos en col D..O — el usuario puede limpiar al final.
-    for (let i = 0; i < periodos.length; i++) {
-      const valor = cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i));
-      if (valor == null) continue;
-      precios.push({
-        material_nombre: concepto,
-        proveedor: null,
-        periodo: periodos[i],
-        precio: valor,
-        unidad: "COP/Ton",
-        row_excel: r0 + 1,
-      });
-    }
-  }
-
-  // ──────────────── % Consumo ────────────────
-  const porcentajes_consumo: PorcentajeConsumoParsed[] = [];
-  for (let r0 = SECCION_PCT_CONSUMO_INICIO - 1; r0 < Math.min(sheet.length, SECCION_PCT_CONSUMO_FIN); r0++) {
-    const concepto = cleanText(getCell(sheet, r0, 1));
-    const proveedor = cleanText(getCell(sheet, r0, 2)) || "default";
-    if (!concepto) continue;
-    for (let i = 0; i < periodos.length; i++) {
-      const v = cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i));
-      if (v == null) continue;
-      // Normalizar a fracción si viene como porcentaje
-      const pct = v > 1.5 ? v / 100 : v;
-      porcentajes_consumo.push({
-        material_nombre: concepto,
-        proveedor,
-        periodo: periodos[i],
-        porcentaje: pct,
-        row_excel: r0 + 1,
-      });
-    }
-  }
-
-  // ──────────────── Recetas / Humedades ────────────────
-  // Por ahora detectamos por keyword en col B después de la sección de % Consumo.
-  const recetas: RecetaLineaParsed[] = [];
-  const humedades: HumedadParsed[] = [];
-  let productoActual: string | null = null;
-
-  for (let r0 = SECCION_PCT_CONSUMO_FIN; r0 < sheet.length; r0++) {
-    const concepto = cleanText(getCell(sheet, r0, 1));
-    if (!concepto) continue;
-    const lower = concepto.toLowerCase();
-
-    if (KEYWORDS_RECETA.some(k => lower.includes(k))) {
-      // Línea tipo "Receta Prehomo" → marca producto
-      const match = concepto.match(/receta\s+(.+)/i);
-      productoActual = match ? cleanText(match[1]) : concepto;
-      continue;
-    }
-
-    if (KEYWORDS_HUMEDAD.some(k => lower.includes(k))) {
+  const precioRange = sections.get("Precios");
+  if (precioRange) {
+    const [start, end] = precioRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      // Saltar filas derivadas (e.g. "Caliza + Martillo" se calcula en el motor)
+      if (/\s\+\s/.test(concepto)) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i));
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
         if (v == null) continue;
-        humedades.push({
-          material_nombre: concepto.replace(/humedad/i, "").trim(),
+        precios.push({
+          material_nombre: concepto,
+          proveedor: null,
           periodo: periodos[i],
-          porcentaje: v > 1.5 ? v / 100 : v,
-          row_excel: r0 + 1,
+          precio: v,
+          unidad,
+          row_excel: r + 1,
         });
       }
-      continue;
     }
+  }
 
-    // Si estamos en una receta y la fila tiene números → línea de receta
-    if (productoActual) {
+  // ─── % Consumo ───
+  const porcentajes_consumo: PorcentajeConsumoParsed[] = [];
+  const pctRange = sections.get("% Consumo");
+  if (pctRange) {
+    const [start, end] = pctRange;
+    for (let r = start; r < end; r++) {
+      const proveedor = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!proveedor || !unidad) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r0, FIRST_PERIOD_COL_IDX + i));
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        const pct = v > 1.5 ? v / 100 : v;
+        porcentajes_consumo.push({
+          material_nombre: proveedor,   // en esta sección la fila es el proveedor; el material se infiere
+          proveedor: "default",
+          periodo: periodos[i],
+          porcentaje: pct,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Recetas (incluye empaque) ───
+  const recetas: RecetaLineaParsed[] = [];
+  const recetaRange = sections.get("Recetas");
+  if (recetaRange) {
+    const [start, end] = recetaRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+
+      let materialNombre: string | null = null;
+      let productoNombre: string | null = null;
+
+      const m = concepto.match(RECETA_PATTERN);
+      if (m) {
+        materialNombre = cleanText(m[1]);
+        productoNombre = cleanText(m[2]);
+      } else {
+        const s = concepto.match(SACOS_PATTERN);
+        if (s) {
+          materialNombre = "Sacos";
+          productoNombre = cleanText(s[1]);
+        } else if (/^cargue/i.test(concepto)) {
+          materialNombre = "Cargue";
+          productoNombre = "Clinker a Tolva";
+        } else {
+          warnings.push({
+            seccion: "recetas",
+            row_excel: r + 1,
+            mensaje: `Receta no reconocida: "${concepto}" (esperado patrón "X En Y" o "Sacos para Y")`,
+          });
+          continue;
+        }
+      }
+
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
         if (v == null) continue;
         recetas.push({
-          producto_nombre: productoActual,
+          producto_nombre: productoNombre,
+          material_nombre: materialNombre,
+          periodo: periodos[i],
+          porcentaje: v,        // %/Producto ya viene como fracción (0..1); empaque como unidades/Ton
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Humedades ───
+  const humedades: HumedadParsed[] = [];
+  const humRange = sections.get("Humedades");
+  if (humRange) {
+    const [start, end] = humRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        const pct = v > 1.5 ? v / 100 : v;
+        humedades.push({
           material_nombre: concepto,
           periodo: periodos[i],
-          porcentaje: v > 1.5 ? v / 100 : v,
-          row_excel: r0 + 1,
+          porcentaje: pct,
+          row_excel: r + 1,
         });
       }
     }
@@ -290,18 +325,6 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     porcentajes_consumo,
     recetas,
     humedades,
-    errors,
-    warnings,
-  };
-}
-
-function emptyParsed(errors: ImportError[], warnings: ImportWarning[]): ParsedExcel {
-  return {
-    periodos: [],
-    precios: [],
-    porcentajes_consumo: [],
-    recetas: [],
-    humedades: [],
     errors,
     warnings,
   };
