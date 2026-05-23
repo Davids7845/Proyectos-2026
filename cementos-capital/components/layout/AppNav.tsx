@@ -21,9 +21,9 @@ export default function AppNav({ user }: AppNavProps) {
   }
 
   const navLinks = [
-    { href: "/versiones", label: "Versiones" },
-    { href: "/admin/maestros/procesos", label: "Maestros" },
-    { href: "/admin/formulas", label: "Fórmulas" },
+    { href: "/versiones", label: "Versiones", match: "/versiones" },
+    { href: "/admin/maestros/procesos", label: "Maestros", match: "/admin/maestros" },
+    { href: "/admin/formulas", label: "Fórmulas", match: "/admin/formulas" },
   ];
 
   return (
@@ -39,7 +39,7 @@ export default function AppNav({ user }: AppNavProps) {
                 key={link.href}
                 href={link.href}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  pathname.startsWith(link.href)
+                  pathname.startsWith(link.match)
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                 }`}
