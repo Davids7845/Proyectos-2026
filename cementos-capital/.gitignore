@@ -46,3 +46,4 @@ supabase/.temp/
 # local-only Excel uploads (never commit)
 /.local-excel.xlsx
 /.test-*.ts
+/.seed-*.ts
