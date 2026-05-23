@@ -25,20 +25,34 @@ import { Ord02Adiciones }      from "@/lib/calc/procesos/ord02_adiciones";
 import { Ord03MoliendaCrudo }  from "@/lib/calc/procesos/ord03_molienda_crudo";
 import { Ord04MoliendaCarbon } from "@/lib/calc/procesos/ord04_molienda_carbon";
 import { Ord05Clinkerizacion } from "@/lib/calc/procesos/ord05_clinkerizacion";
-import { Ord06CementoUg }      from "@/lib/calc/procesos/ord06_cemento_ug";
-import { Ord07CementoArt }     from "@/lib/calc/procesos/ord07_cemento_art";
-import { Ord08CementoUg50 }    from "@/lib/calc/procesos/ord08_cemento_ug_50";
+import { Ord06CementoUg }       from "@/lib/calc/procesos/ord06_cemento_ug";
+import { Ord07CementoArt }      from "@/lib/calc/procesos/ord07_cemento_art";
+import { Ord08CementoUg50 }     from "@/lib/calc/procesos/ord08_cemento_ug_50";
+import { Ord09CementoUg42 }     from "@/lib/calc/procesos/ord09_cemento_ug_42";
+import { Ord10CementoUg25 }     from "@/lib/calc/procesos/ord10_cemento_ug_25";
+import { Ord11CementoArt42 }    from "@/lib/calc/procesos/ord11_cemento_art_42";
+import { Ord14CementoTopex50 }  from "@/lib/calc/procesos/ord14_cemento_topex_50";
+import { Ord15CementoUgTp }     from "@/lib/calc/procesos/ord15_cemento_ug_tp";
+import { Ord16Fibrocemento }    from "@/lib/calc/procesos/ord16_fibrocemento";
+import { Ord19CementoBigBag }   from "@/lib/calc/procesos/ord19_cemento_bigbag";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
 const CALCULADORES: Record<number, ProcesoCalculator> = {
-  1: new Ord01Trituracion(),
-  2: new Ord02Adiciones(),
-  3: new Ord03MoliendaCrudo(),
-  4: new Ord04MoliendaCarbon(),
-  5: new Ord05Clinkerizacion(),
-  6: new Ord06CementoUg(),
-  7: new Ord07CementoArt(),
-  8: new Ord08CementoUg50(),
+   1: new Ord01Trituracion(),
+   2: new Ord02Adiciones(),
+   3: new Ord03MoliendaCrudo(),
+   4: new Ord04MoliendaCarbon(),
+   5: new Ord05Clinkerizacion(),
+   6: new Ord06CementoUg(),
+   7: new Ord07CementoArt(),
+   8: new Ord08CementoUg50(),
+   9: new Ord09CementoUg42(),
+  10: new Ord10CementoUg25(),
+  11: new Ord11CementoArt42(),
+  14: new Ord14CementoTopex50(),
+  15: new Ord15CementoUgTp(),
+  16: new Ord16Fibrocemento(),
+  19: new Ord19CementoBigBag(),
 };
 
 export interface RunOptions {
