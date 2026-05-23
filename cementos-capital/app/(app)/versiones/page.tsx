@@ -65,7 +65,12 @@ export default async function VersionesPage() {
                 return (
                   <tr key={v.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {v.nombre}
+                      <Link
+                        href={`/versiones/${v.id}`}
+                        className="hover:text-blue-700 hover:underline"
+                      >
+                        {v.nombre}
+                      </Link>
                       {v.descripcion && (
                         <p className="text-xs text-gray-500 font-normal">{v.descripcion}</p>
                       )}
