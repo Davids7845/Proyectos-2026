@@ -17,6 +17,7 @@ function norm(s: string): string {
 interface MaterialIdx {
   byNombre: Map<string, string>;     // nombre normalizado → id
   byCodigo: Map<string, string>;     // código exacto → id
+  byAlias: Map<string, string>;      // alias normalizado → id
 }
 
 async function loadMaterialesIndex(supabase: Client): Promise<MaterialIdx> {
@@ -31,11 +32,17 @@ async function loadMaterialesIndex(supabase: Client): Promise<MaterialIdx> {
     byNombre.set(norm(m.nombre), m.id);
     byCodigo.set(m.codigo, m.id);
   }
-  return { byNombre, byCodigo };
+  const { data: aliasRows } = await supabase
+    .from("material_aliases")
+    .select("alias, material_id");
+  const byAlias = new Map<string, string>();
+  for (const a of aliasRows ?? []) byAlias.set(norm(a.alias), a.material_id);
+  return { byNombre, byCodigo, byAlias };
 }
 
 function resolveMaterial(idx: MaterialIdx, nombre: string): string | null {
-  return idx.byNombre.get(norm(nombre)) ?? null;
+  const n = norm(nombre);
+  return idx.byNombre.get(n) ?? idx.byAlias.get(n) ?? null;
 }
 
 export async function loadParsedExcel(

@@ -552,6 +552,38 @@ export type Database = {
           },
         ]
       }
+      material_aliases: {
+        Row: {
+          alias: string
+          creado_en: string
+          id: string
+          material_id: string
+          notas: string | null
+        }
+        Insert: {
+          alias: string
+          creado_en?: string
+          id?: string
+          material_id: string
+          notas?: string | null
+        }
+        Update: {
+          alias?: string
+          creado_en?: string
+          id?: string
+          material_id?: string
+          notas?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_aliases_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "materiales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       materiales: {
         Row: {
           activo: boolean
@@ -1209,3 +1241,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

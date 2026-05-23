@@ -1,6 +1,6 @@
 // ORD 16 — Fibrocemento
-// Receta: CEM_UG (arrastre ORD 6) + materiales fibrosos + aditivos (todos directos).
-// El granel fuente se confirmará con el Excel real; mientras tanto asumimos CEM_UG.
+// Receta: Clinker (ORD 5) como insumo derivado + materiales directos.
+// Confirmado en Excel: la fila es "Clinker En Cemento Fibro", no CEM_UG.
 
 import { runRecetaProcess } from "./_receta_base";
 import type {
@@ -8,7 +8,7 @@ import type {
 } from "@/lib/calc/engine/context";
 
 const DERIVED_BY_CODIGO: Record<string, number> = {
-  CEM_UG: 6,
+  CLINKER001: 5,
 };
 
 export class Ord16Fibrocemento implements ProcesoCalculator {

@@ -209,16 +209,51 @@ describe("Runner ORD 15 — Cemento UG TP", () => {
 
 // ─── ORD 16 — Fibrocemento ──────────────────────────────────────────────────
 describe("Runner ORD 16 — Fibrocemento", () => {
+  const PROC5_ID = "proc-5";
+  const MAT_CLINKER_ID = "mat-clinker";
+  const COSTO_CLINKER = 220_000;
   const PROC16: ProcesoMeta = makeProceso("proc-16", 16, "Fibrocemento", 9);
   const RECETA = [
-    { material_id: MAT_CEM_UG_ID, porcentaje: 0.7,  orden: 1 },
-    { material_id: MAT_CARGUE_ID, porcentaje: 1.0,  orden: 2 },
+    { material_id: MAT_CLINKER_ID, porcentaje: 0.7, orden: 1 },
+    { material_id: MAT_CARGUE_ID,  porcentaje: 1.0, orden: 2 },
   ];
 
-  it("Arrastra CEM_UG de ORD 6", async () => {
-    const ctx = buildCtxUg(PROC16, RECETA);
+  function buildCtxClinker(recetaLineas: { material_id: string; porcentaje: number; orden: number }[]): CalcContext {
+    const procesos: ProcesoMeta[] = [
+      makeProceso(PROC5_ID, 5, "Clinker", 6),
+      PROC16,
+    ];
+    const matsList = [
+      { id: MAT_CLINKER_ID, codigo: "CLINKER001", nombre: "Clinker",               unidad_base: "T" },
+      { id: MAT_CARGUE_ID,  codigo: "CARGUE_CEM", nombre: "Empaque y Cargue Cemento", unidad_base: "T" },
+    ];
+    const materialesById     = new Map(matsList.map(m => [m.id, m]));
+    const materialesByCodigo = new Map(matsList.map(m => [m.codigo, m]));
+    const preciosByMatPeriodo = new Map([
+      [`${MAT_CARGUE_ID}|${PERIODO}|`, { material_id: MAT_CARGUE_ID, proveedor: null, periodo: PERIODO, precio: 8500, unidad: "COP/Ton" }],
+    ]);
+    const costoProcesoByKey = new Map([
+      [`${PROC5_ID}|${PERIODO}`, { costo_total: COSTO_CLINKER, costo_por_ton: COSTO_CLINKER, calc_total_id: "calc-ord5-total" }],
+    ]);
+    return {
+      versionId: "v", runId: "r", periodos: [PERIODO],
+      procesos, materialesById, materialesByCodigo,
+      preciosByMatPeriodo, pctConsumoByKey: new Map(),
+      recetasByProcesoPeriodo: new Map([
+        [`${PROC16.id}|${PERIODO}`, { receta_id: "rec-16", producto_id: "mat-out-16", proceso_id: PROC16.id, periodo: PERIODO, lineas: recetaLineas }],
+      ]),
+      formulaIdByCodigo: new Map([
+        ["COSTO_PROCESO_SUMA_v1", "f-sm"],
+        ["COSTO_MP_RECETA_v1",    "f-mp"],
+      ]),
+      costoProcesoByKey,
+    };
+  }
+
+  it("Arrastra Clinker de ORD 5", async () => {
+    const ctx = buildCtxClinker(RECETA);
     const r16 = await new Ord16Fibrocemento().run({ ctx, proceso: PROC16, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 0.7 * COSTO_GRANEL_UG + 1 * 8500;
+    const expected = 0.7 * COSTO_CLINKER + 1 * 8500;
     expect(r16.costo_total).toBeCloseTo(expected, 2);
   });
 });

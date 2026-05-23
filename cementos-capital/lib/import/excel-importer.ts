@@ -54,6 +54,8 @@ const SECTION_NAMES = new Set([
 const RECETA_PATTERN = /^(.+?)\s+En\s+(.+)$/i;
 // Patrón de empaque: "Sacos para <producto>"  ó "Cargue clinker a Tolva"
 const SACOS_PATTERN = /^Sacos para\s+(.+)$/i;
+// Extrae tamaño de saco del nombre del producto: "Ug 50 Kg" → "50 Kg", "Art 42,5 Kg" → "42,5 Kg"
+const SACO_SIZE_RE = /(\d[\d,]*\s*Kg)\s*$/i;
 
 // ─────────────────────────────────────────────────────────────────
 // Utilidades
@@ -267,8 +269,9 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       } else {
         const s = concepto.match(SACOS_PATTERN);
         if (s) {
-          materialNombre = "Sacos";
           productoNombre = cleanText(s[1]);
+          const sizeMatch = productoNombre.match(SACO_SIZE_RE);
+          materialNombre = sizeMatch ? `Sacos ${sizeMatch[1]}` : "Sacos";
         } else if (/^cargue/i.test(concepto)) {
           materialNombre = "Cargue";
           productoNombre = "Clinker a Tolva";
