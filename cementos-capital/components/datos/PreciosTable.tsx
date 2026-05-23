@@ -7,7 +7,7 @@ interface Precio {
   material_id: string;
   proveedor: string | null;
   periodo: string;
-  precio_unitario: string;
+  precio_unitario: number;
   unidad: string;
 }
 

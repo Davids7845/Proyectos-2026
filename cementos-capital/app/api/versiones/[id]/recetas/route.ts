@@ -104,7 +104,7 @@ export async function PUT(
     .insert(lineas.map(l => ({
       receta_id: recetaId,
       material_id: l.material_id,
-      porcentaje: String(l.porcentaje),
+      porcentaje: l.porcentaje,
       orden: l.orden,
     })));
 

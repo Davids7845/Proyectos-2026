@@ -37,6 +37,7 @@ next-env.d.ts
 
 # supabase
 .supabase/
+supabase/.temp/
 
 # uploads / temp
 /uploads

@@ -69,7 +69,7 @@ export async function loadParsedExcel(
         material_id: materialId,
         proveedor: p.proveedor,
         periodo: p.periodo,
-        precio_unitario: String(p.precio),
+        precio_unitario: Number(p.precio),
         unidad: p.unidad,
         moneda: "COP",
       };
@@ -112,7 +112,7 @@ export async function loadParsedExcel(
         material_id: materialId,
         proveedor: p.proveedor,
         periodo: p.periodo,
-        porcentaje: String(p.porcentaje),
+        porcentaje: Number(p.porcentaje),
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -142,7 +142,7 @@ export async function loadParsedExcel(
         version_id: versionId,
         material_id: materialId,
         periodo: h.periodo,
-        porcentaje: String(h.porcentaje),
+        porcentaje: Number(h.porcentaje),
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -234,7 +234,7 @@ export async function loadParsedExcel(
           return {
             receta_id: rec.id,
             material_id: materialId,
-            porcentaje: String(ln.porcentaje),
+            porcentaje: Number(ln.porcentaje),
             orden: idx2 + 1,
           };
         })

@@ -111,9 +111,9 @@ export async function applyOverride(
   const { error: upErr } = await supabase
     .from("calculation_log")
     .update({
-      valor_resultado: String(nuevoValor),
+      valor_resultado: nuevoValor,
       es_override: true,
-      valor_original: valorOriginal,
+      valor_original: valorOriginal != null ? Number(valorOriginal) : null,
       motivo_override: motivo,
     })
     .eq("id", calcId);
@@ -189,7 +189,7 @@ export async function applyOverride(
       const { error: ancErr } = await supabase
         .from("calculation_log")
         .update({
-          valor_resultado: String(nuevo.valor),
+          valor_resultado: nuevo.valor,
           // expresion + params se quedan tal cual; vinieron del run original.
           // Si quisiéramos podríamos actualizar formula_expresion = nuevo.expresion_evaluada,
           // pero RLS bloquea updates a formula_expresion en versiones congeladas.
@@ -232,7 +232,7 @@ export async function clearOverride(
   const { error } = await supabase
     .from("calculation_log")
     .update({
-      valor_resultado: String(original),
+      valor_resultado: original,
       es_override: false,
       valor_original: null,
       motivo_override: null,
@@ -313,7 +313,7 @@ async function propagateUpward(
 
       const { error } = await supabase
         .from("calculation_log")
-        .update({ valor_resultado: String(nuevo.valor) })
+        .update({ valor_resultado: nuevo.valor })
         .eq("id", ancestor.id);
       if (error) { result.warnings.push(`update ${ancestor.id}: ${error.message}`); continue; }
       result.ancestros_recalculados++;
@@ -335,10 +335,10 @@ async function syncCostoProceso(supabase: Client, calcTotalId: UUID, nuevoTotal:
   const { error } = await supabase
     .from("costo_proceso")
     .update({
-      costo_total: String(nuevoTotal),
-      costo_por_ton: String(nuevoTotal),
-      costo_total_arrastrado: String(nuevoTotal),
-      costo_por_ton_arrastrado: String(nuevoTotal),
+      costo_total: nuevoTotal,
+      costo_por_ton: nuevoTotal,
+      costo_total_arrastrado: nuevoTotal,
+      costo_por_ton_arrastrado: nuevoTotal,
     })
     .eq("calc_total_id", calcTotalId);
   if (error) throw new Error(`syncCostoProceso: ${error.message}`);

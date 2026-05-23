@@ -50,7 +50,7 @@ export async function PATCH(
 
   const { error: updErr } = await supabase
     .from("precios_insumos")
-    .update({ precio_unitario: String(precio_unitario) })
+    .update({ precio_unitario })
     .eq("id", id);
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
