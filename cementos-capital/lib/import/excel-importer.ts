@@ -5,6 +5,14 @@ import type {
   PorcentajeConsumoParsed,
   RecetaLineaParsed,
   HumedadParsed,
+  RoturaParsed,
+  VentaParsed,
+  RendimientoParsed,
+  IndicadorParsed,
+  ParametroEnergiaParsed,
+  CombustiblePciParsed,
+  EnergiaTermicaParsed,
+  InventarioParsed,
   ImportError,
   ImportWarning,
   Periodo,
@@ -116,9 +124,65 @@ function emptyParsed(errors: ImportError[], warnings: ImportWarning[]): ParsedEx
     porcentajes_consumo: [],
     recetas: [],
     humedades: [],
+    roturas: [],
+    ventas: [],
+    rendimientos: [],
+    indicadores: [],
+    parametros_energia: [],
+    combustibles_pci: [],
+    energia_termica: [],
+    inventarios: [],
     errors,
     warnings,
   };
+}
+
+/** Extrae "Proceso" de un texto tipo "Campo (Proceso)" -> "Proceso". */
+function extractProcesoFromParens(label: string): { campo: string; proceso: string | null } {
+  const m = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (m) return { campo: cleanText(m[1]), proceso: cleanText(m[2]) };
+  return { campo: cleanText(label), proceso: null };
+}
+
+/** Mapeo de etiqueta cruda en la sección Energía → campo canónico. */
+function mapEnergiaLabel(label: string): ParametroEnergiaParsed["campo"] {
+  const l = label.toLowerCase();
+  if (l.includes("contrato")) return "precio_contrato";
+  if (l.includes("conexión") || l.includes("conexion") || l.includes("restriccion")) return "precio_restricciones";
+  if (l.includes("cargos fijos") || l.includes("admin")) return "cargos_fijos";
+  if (l.includes("energía elécrica") || l.includes("energía eléctrica") || l.includes("energia electrica")) return "precio_energia_total";
+  if (l.includes("smarten")) return "facturacion_smarten";
+  return "otros";
+}
+
+/** Mapeo de etiqueta de Inventarios → campo canónico. */
+function mapInventarioLabel(label: string): { campo: InventarioParsed["campo"]; material: string } {
+  const m = label.match(/^(Consumos|Ventas|Inventario Final)\s+(.+)$/i);
+  if (!m) return { campo: "otro", material: label };
+  const tipo = m[1].toLowerCase();
+  const campo: InventarioParsed["campo"] =
+    tipo === "consumos" ? "consumos" :
+    tipo === "ventas" ? "ventas" :
+    "inventario_final";
+  return { campo, material: cleanText(m[2]) };
+}
+
+/** Energía térmica: "Diesel Seco", "Carbón Mixto Seco (Masa)", etc. */
+function mapEnergiaTermicaLabel(label: string): { campo: EnergiaTermicaParsed["campo"]; componente: string | null } {
+  const l = label.toLowerCase();
+  if (l.includes("energía total horno") || l.includes("energia total horno") || l.startsWith("kcal")) {
+    return { campo: "kcal_tck_total", componente: null };
+  }
+  if (l.includes("(masa)") || l.includes("(volumen)")) {
+    return { campo: "composicion", componente: cleanText(label) };
+  }
+  if (l.includes("seco") && !l.includes("(masa)")) {
+    return { campo: "pci_seco", componente: cleanText(label) };
+  }
+  if (l.includes("humedad")) {
+    return { campo: "humedad_combustible", componente: cleanText(label) };
+  }
+  return { campo: "otro", componente: cleanText(label) };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -322,12 +386,221 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     }
   }
 
+  // ─── Rotura ───
+  const roturas: RoturaParsed[] = [];
+  const rotRange = sections.get("Rotura");
+  if (rotRange) {
+    const [start, end] = rotRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        const pct = v > 1.5 ? v / 100 : v;
+        roturas.push({
+          material_nombre: concepto,
+          periodo: periodos[i],
+          porcentaje: pct,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Ventas ───
+  const ventas: VentaParsed[] = [];
+  const ventasRange = sections.get("Ventas");
+  if (ventasRange) {
+    const [start, end] = ventasRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        ventas.push({
+          material_nombre: concepto,
+          periodo: periodos[i],
+          cantidad_ton: v,
+          unidad,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Rendimiento ───
+  const rendimientos: RendimientoParsed[] = [];
+  const rendRange = sections.get("Rendimiento");
+  if (rendRange) {
+    const [start, end] = rendRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      const { campo, proceso } = extractProcesoFromParens(concepto);
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        rendimientos.push({
+          campo,
+          proceso_nombre: proceso,
+          periodo: periodos[i],
+          valor: v,
+          unidad,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Indicadores ───
+  const indicadores: IndicadorParsed[] = [];
+  const indRange = sections.get("Indicadores");
+  if (indRange) {
+    const [start, end] = indRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      const { campo, proceso } = extractProcesoFromParens(concepto);
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        // Normalizar porcentajes (disponibilidad, OEE, utilización) que vienen 0..1 ó 0..100
+        const isPct = unidad === "%" || /disponibilidad|oee|utilizaci/i.test(campo);
+        const valor = isPct && v > 1.5 ? v / 100 : v;
+        indicadores.push({
+          concepto: campo,
+          proceso_nombre: proceso,
+          periodo: periodos[i],
+          valor,
+          unidad,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Energía ───
+  const parametros_energia: ParametroEnergiaParsed[] = [];
+  const enerRange = sections.get("Energía");
+  if (enerRange) {
+    const [start, end] = enerRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      const campo = mapEnergiaLabel(concepto);
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        parametros_energia.push({
+          campo,
+          periodo: periodos[i],
+          valor: v,
+          unidad,
+          row_excel: r + 1,
+          raw_label: concepto,
+        });
+      }
+    }
+  }
+
+  // ─── Combustibles ───
+  const combustibles_pci: CombustiblePciParsed[] = [];
+  const combRange = sections.get("Combustibles");
+  if (combRange) {
+    const [start, end] = combRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      // Patrón "<Proveedor> (PCI)" — extraer proveedor
+      const m = concepto.match(/^(.+?)\s*\(PCI\)\s*$/i);
+      const proveedor = m ? cleanText(m[1]) : concepto;
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        combustibles_pci.push({
+          proveedor,
+          periodo: periodos[i],
+          pci: v,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Energía Térmica ───
+  const energia_termica: EnergiaTermicaParsed[] = [];
+  const termRange = sections.get("Energía Térmica");
+  if (termRange) {
+    const [start, end] = termRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      const { campo, componente } = mapEnergiaTermicaLabel(concepto);
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        // Normalizar % de composición
+        const isPctComp = campo === "composicion" && unidad === "%" && v > 1.5;
+        const valor = isPctComp ? v / 100 : v;
+        energia_termica.push({
+          campo,
+          componente,
+          periodo: periodos[i],
+          valor,
+          unidad,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
+  // ─── Inventarios ───
+  const inventarios: InventarioParsed[] = [];
+  const invRange = sections.get("Inventarios");
+  if (invRange) {
+    const [start, end] = invRange;
+    for (let r = start; r < end; r++) {
+      const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
+      const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
+      if (!concepto || !unidad) continue;
+      const { campo, material } = mapInventarioLabel(concepto);
+      for (let i = 0; i < periodos.length; i++) {
+        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        if (v == null) continue;
+        inventarios.push({
+          material_nombre: material,
+          campo,
+          periodo: periodos[i],
+          cantidad_ton: v,
+          row_excel: r + 1,
+        });
+      }
+    }
+  }
+
   return {
     periodos,
     precios,
     porcentajes_consumo,
     recetas,
     humedades,
+    roturas,
+    ventas,
+    rendimientos,
+    indicadores,
+    parametros_energia,
+    combustibles_pci,
+    energia_termica,
+    inventarios,
     errors,
     warnings,
   };

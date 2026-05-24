@@ -737,9 +737,12 @@ export type Database = {
       parametros_energia: {
         Row: {
           cargos_fijos: number | null
+          composicion_horno: Json | null
           id: string
+          kcal_tck_total: number | null
           kwh_ton_proceso: Json | null
           pci_combustibles: Json | null
+          pci_ponderado_horno: number | null
           periodo: string
           precio_contrato: number | null
           precio_restricciones: number | null
@@ -747,9 +750,12 @@ export type Database = {
         }
         Insert: {
           cargos_fijos?: number | null
+          composicion_horno?: Json | null
           id?: string
+          kcal_tck_total?: number | null
           kwh_ton_proceso?: Json | null
           pci_combustibles?: Json | null
+          pci_ponderado_horno?: number | null
           periodo: string
           precio_contrato?: number | null
           precio_restricciones?: number | null
@@ -757,9 +763,12 @@ export type Database = {
         }
         Update: {
           cargos_fijos?: number | null
+          composicion_horno?: Json | null
           id?: string
+          kcal_tck_total?: number | null
           kwh_ton_proceso?: Json | null
           pci_combustibles?: Json | null
+          pci_ponderado_horno?: number | null
           periodo?: string
           precio_contrato?: number | null
           precio_restricciones?: number | null
@@ -768,6 +777,90 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "parametros_energia_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      roturas_sacos: {
+        Row: {
+          creado_en: string
+          id: string
+          material_id: string | null
+          periodo: string
+          porcentaje_rotura: number
+          version_id: string
+        }
+        Insert: {
+          creado_en?: string
+          id?: string
+          material_id?: string | null
+          periodo: string
+          porcentaje_rotura: number
+          version_id: string
+        }
+        Update: {
+          creado_en?: string
+          id?: string
+          material_id?: string | null
+          periodo?: string
+          porcentaje_rotura?: number
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roturas_sacos_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "materiales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "roturas_sacos_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "budget_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventarios_finales: {
+        Row: {
+          cantidad_ton: number | null
+          creado_en: string
+          id: string
+          material_id: string
+          periodo: string
+          version_id: string
+        }
+        Insert: {
+          cantidad_ton?: number | null
+          creado_en?: string
+          id?: string
+          material_id: string
+          periodo: string
+          version_id: string
+        }
+        Update: {
+          cantidad_ton?: number | null
+          creado_en?: string
+          id?: string
+          material_id?: string
+          periodo?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventarios_finales_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "materiales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventarios_finales_version_id_fkey"
             columns: ["version_id"]
             isOneToOne: false
             referencedRelation: "budget_versions"
