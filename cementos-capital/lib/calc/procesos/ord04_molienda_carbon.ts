@@ -26,6 +26,8 @@ export class Ord04MoliendaCarbon implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_carbon",
       conceptoMp: "Costo Materia Prima — Carbón Molido",
       derivedByCodigo: {},
+      conEnergia: true,
+      energiaKey: "molienda de carbón",
     });
   }
 }

@@ -49,6 +49,30 @@ export interface ProcesoMeta {
   orden_topologico: number;
 }
 
+export interface ParametrosEnergiaCtx {
+  periodo: Periodo;
+  precio_contrato: number | null;
+  precio_restricciones: number | null;
+  cargos_fijos: number | null;
+  kwh_ton_proceso: Record<string, number> | null;   // codigo o nombre de proceso → kWh/Ton
+  pci_combustibles: Record<string, number> | null;  // proveedor → Kcal/Ton
+  kcal_tck_total: number | null;
+  pci_ponderado_horno: number | null;
+  composicion_horno: Record<string, number> | null; // componente → fracción 0..1
+}
+
+export interface RendimientoCtx {
+  proceso_id: UUID;
+  periodo: Periodo;
+  horas_mes: number | null;
+  produccion_ton: number | null;
+  horas_operacion_efectivas: number | null;
+  rendimiento_ton_hr: number | null;
+  disponibilidad: number | null;
+  utilizacion: number | null;
+  oee: number | null;
+}
+
 export interface CalcContext {
   versionId: UUID;
   runId: UUID;
@@ -62,6 +86,9 @@ export interface CalcContext {
   formulaIdByCodigo: Map<string, UUID>;              // codigo (e.g. COSTO_PREHOMO_v1) → formula_definitions.id
   // Resultados previos: para que un proceso pueda referenciar costo_por_ton de un proceso anterior
   costoProcesoByKey: Map<string, { costo_total: number; costo_por_ton: number; calc_total_id: UUID }>; // key: `${proceso_id}|${periodo}`
+  // Fase 1.5: contexto energético y de rendimiento (opcional para compat con tests)
+  parametrosEnergiaByPeriodo?: Map<Periodo, ParametrosEnergiaCtx>;
+  rendimientosByProcesoPeriodo?: Map<string, RendimientoCtx>;  // key: `${proceso_id}|${periodo}`
 }
 
 // ─────────────────────────────────────────────────────────────────

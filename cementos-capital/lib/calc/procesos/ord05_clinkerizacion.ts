@@ -32,6 +32,9 @@ export class Ord05Clinkerizacion implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_clinker",
       conceptoMp: "Costo Materia Prima — Clinker",
       derivedByCodigo: DERIVED_BY_CODIGO,
+      conEnergia: true,
+      energiaKey: "clinkerización",
+      conCombustible: true,
     });
   }
 }

@@ -30,6 +30,8 @@ export class Ord03MoliendaCrudo implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_crudo",
       conceptoMp: "Costo Materia Prima — Harina Cruda",
       derivedByCodigo: DERIVED_BY_CODIGO,
+      conEnergia: true,
+      energiaKey: "molienda de crudo",
     });
   }
 }

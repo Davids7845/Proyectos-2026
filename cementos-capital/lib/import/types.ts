@@ -74,7 +74,16 @@ export interface IndicadorParsed {
 }
 
 export interface ParametroEnergiaParsed {
-  campo: "precio_contrato" | "precio_restricciones" | "cargos_fijos" | "precio_energia_total" | "facturacion_smarten" | "otros";
+  campo:
+    | "precio_contrato"
+    | "precio_restricciones"
+    | "cargos_fijos"
+    | "precio_energia_total"
+    | "facturacion_smarten"
+    | "kwh_ton_proceso"
+    | "otros";
+  /** Solo válido si campo === "kwh_ton_proceso": clave normalizada del proceso */
+  proceso_key?: string | null;
   periodo: Periodo;
   valor: number;
   unidad: string;

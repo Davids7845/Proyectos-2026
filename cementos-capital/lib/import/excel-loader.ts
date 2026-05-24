@@ -329,6 +329,9 @@ export async function loadParsedExcel(
       if (e.campo === "precio_contrato") row.precio_contrato = e.valor;
       else if (e.campo === "precio_restricciones") row.precio_restricciones = e.valor;
       else if (e.campo === "cargos_fijos") row.cargos_fijos = e.valor;
+      else if (e.campo === "kwh_ton_proceso" && e.proceso_key) {
+        row.kwh_ton_proceso = { ...(row.kwh_ton_proceso ?? {}), [e.proceso_key]: e.valor };
+      }
     }
     for (const c of parsed.combustibles_pci) {
       const row = ensure(c.periodo);

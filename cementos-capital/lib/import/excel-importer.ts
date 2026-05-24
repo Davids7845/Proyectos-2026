@@ -144,15 +144,35 @@ function extractProcesoFromParens(label: string): { campo: string; proceso: stri
   return { campo: cleanText(label), proceso: null };
 }
 
-/** Mapeo de etiqueta cruda en la sección Energía → campo canónico. */
-function mapEnergiaLabel(label: string): ParametroEnergiaParsed["campo"] {
+/** Mapeo de etiqueta cruda en la sección Energía → campo canónico + proceso_key opcional. */
+function mapEnergiaLabel(label: string): { campo: ParametroEnergiaParsed["campo"]; proceso_key: string | null } {
   const l = label.toLowerCase();
-  if (l.includes("contrato")) return "precio_contrato";
-  if (l.includes("conexión") || l.includes("conexion") || l.includes("restriccion")) return "precio_restricciones";
-  if (l.includes("cargos fijos") || l.includes("admin")) return "cargos_fijos";
-  if (l.includes("energía elécrica") || l.includes("energía eléctrica") || l.includes("energia electrica")) return "precio_energia_total";
-  if (l.includes("smarten")) return "facturacion_smarten";
-  return "otros";
+  if (l.includes("contrato")) return { campo: "precio_contrato", proceso_key: null };
+  if (l.includes("conexión") || l.includes("conexion") || l.includes("restriccion")) return { campo: "precio_restricciones", proceso_key: null };
+  if (l.includes("cargos fijos") || l.includes("admin")) return { campo: "cargos_fijos", proceso_key: null };
+  if (l.includes("energía elécrica") || l.includes("energía eléctrica") || l.includes("energia electrica")) return { campo: "precio_energia_total", proceso_key: null };
+  if (l.includes("smarten")) return { campo: "facturacion_smarten", proceso_key: null };
+
+  // "Consumo Eléctrico <Proceso>" → kwh_ton_proceso con proceso_key normalizado
+  const m = label.match(/^Consumo\s+El[eé]ctrico\s+(.+)$/i);
+  if (m) {
+    const proc = cleanText(m[1]).toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "");
+    // Aliases para alinear con nombres de proceso en BD
+    const aliases: Record<string, string> = {
+      "crudo": "molienda de crudo",
+      "carbon": "molienda de carbón",
+      "carbón": "molienda de carbón",
+      "alternos": "combustibles alternos",
+      "horno": "clinkerización",
+      "cemento ug": "cemento ug",
+      "cemento art": "cemento art",
+      "cemento fibro": "fibrocemento",
+    };
+    const proceso_key = aliases[proc] ?? proc;
+    return { campo: "kwh_ton_proceso", proceso_key };
+  }
+  return { campo: "otros", proceso_key: null };
 }
 
 /** Mapeo de etiqueta de Inventarios → campo canónico. */
@@ -494,12 +514,13 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const concepto = cleanText(getCell(sheet, r, CONCEPTO_COL));
       const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
       if (!concepto || !unidad) continue;
-      const campo = mapEnergiaLabel(concepto);
+      const { campo, proceso_key } = mapEnergiaLabel(concepto);
       for (let i = 0; i < periodos.length; i++) {
         const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
         if (v == null) continue;
         parametros_energia.push({
           campo,
+          proceso_key,
           periodo: periodos[i],
           valor: v,
           unidad,

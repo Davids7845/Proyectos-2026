@@ -30,6 +30,8 @@ export class Ord07CementoArt implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_cemento_art",
       conceptoMp: "Costo Materia Prima — Cemento ART",
       derivedByCodigo: DERIVED_BY_CODIGO,
+      conEnergia: true,
+      energiaKey: "cemento art",
     });
   }
 }

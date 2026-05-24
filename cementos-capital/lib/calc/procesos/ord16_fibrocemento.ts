@@ -21,6 +21,8 @@ export class Ord16Fibrocemento implements ProcesoCalculator {
       calculoTipoMp: "costo_proceso_fibrocemento",
       conceptoMp: "Costo Materiales — Fibrocemento",
       derivedByCodigo: DERIVED_BY_CODIGO,
+      conEnergia: true,
+      energiaKey: "fibrocemento",
     });
   }
 }

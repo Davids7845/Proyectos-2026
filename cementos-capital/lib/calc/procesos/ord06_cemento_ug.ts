@@ -30,6 +30,8 @@ export class Ord06CementoUg implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_cemento_ug",
       conceptoMp: "Costo Materia Prima — Cemento UG",
       derivedByCodigo: DERIVED_BY_CODIGO,
+      conEnergia: true,
+      energiaKey: "cemento ug",
     });
   }
 }

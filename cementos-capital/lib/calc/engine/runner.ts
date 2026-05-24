@@ -10,12 +10,14 @@ import type {
   CalcContext,
   Client,
   MaterialMeta,
+  ParametrosEnergiaCtx,
   Periodo,
   PrecioCtx,
   PctConsumoCtx,
   ProcesoCalculator,
   ProcesoMeta,
   RecetaCtx,
+  RendimientoCtx,
   UUID,
 } from "./context";
 import { SupabaseWriter } from "./writer";
@@ -258,6 +260,8 @@ async function loadContext(
     { data: pctRaw, error: pctErr },
     { data: recetasRaw, error: recErr },
     { data: lineasRaw, error: lnErr },
+    { data: enerRaw, error: enerErr },
+    { data: rendRaw, error: rendErr },
   ] = await Promise.all([
     supabase.from("procesos").select("id, ord, material, nombre, orden_topologico").eq("activo", true),
     supabase.from("materiales").select("id, codigo, nombre, unidad_base").eq("activo", true),
@@ -265,6 +269,8 @@ async function loadContext(
     supabase.from("porcentajes_consumo").select("material_id, proveedor, periodo, porcentaje").eq("version_id", versionId),
     supabase.from("recetas").select("id, producto_id, proceso_id, periodo").eq("version_id", versionId),
     supabase.from("receta_lineas").select("receta_id, material_id, porcentaje, orden"),
+    supabase.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno").eq("version_id", versionId),
+    supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
   ]);
 
   if (procErr) throw new Error(`procesos: ${procErr.message}`);
@@ -273,6 +279,8 @@ async function loadContext(
   if (pctErr) throw new Error(`porcentajes_consumo: ${pctErr.message}`);
   if (recErr) throw new Error(`recetas: ${recErr.message}`);
   if (lnErr) throw new Error(`receta_lineas: ${lnErr.message}`);
+  if (enerErr) throw new Error(`parametros_energia: ${enerErr.message}`);
+  if (rendErr) throw new Error(`rendimientos: ${rendErr.message}`);
 
   const materialesById = new Map<UUID, MaterialMeta>();
   const materialesByCodigo = new Map<string, MaterialMeta>();
@@ -336,6 +344,38 @@ async function loadContext(
     }))
     .sort((a, b) => a.orden_topologico - b.orden_topologico);
 
+  // ─── Fase 1.5: parametros_energia + rendimientos ────────────────────────
+  const parametrosEnergiaByPeriodo = new Map<Periodo, ParametrosEnergiaCtx>();
+  for (const e of enerRaw ?? []) {
+    parametrosEnergiaByPeriodo.set(e.periodo, {
+      periodo: e.periodo,
+      precio_contrato:      e.precio_contrato      != null ? Number(e.precio_contrato)      : null,
+      precio_restricciones: e.precio_restricciones != null ? Number(e.precio_restricciones) : null,
+      cargos_fijos:         e.cargos_fijos         != null ? Number(e.cargos_fijos)         : null,
+      kwh_ton_proceso:      (e.kwh_ton_proceso as Record<string, number> | null) ?? null,
+      pci_combustibles:     (e.pci_combustibles as Record<string, number> | null) ?? null,
+      kcal_tck_total:       e.kcal_tck_total       != null ? Number(e.kcal_tck_total)       : null,
+      pci_ponderado_horno:  e.pci_ponderado_horno  != null ? Number(e.pci_ponderado_horno)  : null,
+      composicion_horno:    (e.composicion_horno as Record<string, number> | null) ?? null,
+    });
+  }
+
+  const rendimientosByProcesoPeriodo = new Map<string, RendimientoCtx>();
+  for (const r of rendRaw ?? []) {
+    const k = `${r.proceso_id}|${r.periodo}`;
+    rendimientosByProcesoPeriodo.set(k, {
+      proceso_id: r.proceso_id,
+      periodo: r.periodo,
+      horas_mes:                 r.horas_mes                 != null ? Number(r.horas_mes)                 : null,
+      produccion_ton:            r.produccion_ton            != null ? Number(r.produccion_ton)            : null,
+      horas_operacion_efectivas: r.horas_operacion_efectivas != null ? Number(r.horas_operacion_efectivas) : null,
+      rendimiento_ton_hr:        r.rendimiento_ton_hr        != null ? Number(r.rendimiento_ton_hr)        : null,
+      disponibilidad:            r.disponibilidad            != null ? Number(r.disponibilidad)            : null,
+      utilizacion:               r.utilizacion               != null ? Number(r.utilizacion)               : null,
+      oee:                       r.oee                       != null ? Number(r.oee)                       : null,
+    });
+  }
+
   return {
     versionId,
     runId,
@@ -348,5 +388,7 @@ async function loadContext(
     recetasByProcesoPeriodo,
     formulaIdByCodigo,
     costoProcesoByKey: new Map(),
+    parametrosEnergiaByPeriodo,
+    rendimientosByProcesoPeriodo,
   };
 }
