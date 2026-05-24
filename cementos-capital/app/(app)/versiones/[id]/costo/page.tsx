@@ -4,6 +4,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import ExportButton from "@/components/ExportButton";
 
 interface CostoCell {
   costo_por_ton: number;
@@ -212,6 +213,7 @@ function Header({ versionId, estado }: { versionId: string; estado: string }) {
         >
           Datos
         </Link>
+        <ExportButton versionId={versionId} />
         <Link
           href={`/versiones/${versionId}/calcular`}
           className="text-sm text-white bg-green-600 hover:bg-green-700 rounded px-3 py-1.5"

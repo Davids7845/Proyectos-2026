@@ -103,6 +103,12 @@ export default async function VersionOverviewPage({
         </div>
         <div className="flex items-center gap-2">
           <Link
+            href={`/versiones/${id}/dashboard`}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Dashboard
+          </Link>
+          <Link
             href={`/versiones/${id}/datos/precios`}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
           >
