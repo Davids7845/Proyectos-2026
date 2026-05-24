@@ -107,11 +107,11 @@ function loadSeed(): SeedRegistry {
   // ── procesos ──
   const procesos: ProcesoMeta[] = [];
   const procesoIdByOrd = new Map<number, UUID>();
-  const procBlockMatch = sql.match(/insert into procesos[^;]+;/s);
+  const procBlockMatch = sql.match(/insert into procesos[^;]+;/);
   if (procBlockMatch) {
     const block = procBlockMatch[0];
     const rowRe = /\(\s*(\d+),\s*'([^']+)',\s*'([^']+)',\s*(\d+)\)/g;
-    for (const m of block.matchAll(rowRe)) {
+    for (const m of Array.from(block.matchAll(rowRe))) {
       const ord = Number(m[1]);
       const material = m[2];
       const nombre = m[3];
@@ -127,11 +127,11 @@ function loadSeed(): SeedRegistry {
   const materialesByCodigo = new Map<string, MaterialMeta>();
   const materialesByNombre = new Map<string, MaterialMeta>();
 
-  const matBlockMatch = sql.match(/insert into materiales[^;]+;/s);
+  const matBlockMatch = sql.match(/insert into materiales[^;]+;/);
   if (matBlockMatch) {
     const block = matBlockMatch[0];
     const rowRe = /\(\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)'\)/g;
-    for (const m of block.matchAll(rowRe)) {
+    for (const m of Array.from(block.matchAll(rowRe))) {
       const codigo = m[1];
       const nombre = m[2];
       const unidad_base = m[3];
@@ -308,7 +308,7 @@ export function buildContextFromExcel(
     g.lineas.push({ material_id: mat.id, porcentaje: ln.porcentaje, orden: g.lineas.length + 1 });
     grupos.set(key, g);
   }
-  for (const [key, g] of grupos) {
+  for (const [key, g] of Array.from(grupos.entries())) {
     const [proc_id] = key.split("|");
     const producto = resolveMaterial(seed, g.producto);
     recetasByProcesoPeriodo.set(key, {

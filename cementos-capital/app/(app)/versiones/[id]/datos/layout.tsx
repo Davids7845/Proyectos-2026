@@ -12,9 +12,12 @@ export default async function DatosLayout({
   const { id } = await params;
 
   const tabs = [
-    { href: `/versiones/${id}/datos/precios`,   label: "Precios" },
-    { href: `/versiones/${id}/datos/recetas`,   label: "Recetas" },
-    { href: `/versiones/${id}/datos/importar`,  label: "Importar Excel" },
+    { href: `/versiones/${id}/datos/precios`,        label: "Precios" },
+    { href: `/versiones/${id}/datos/recetas`,        label: "Recetas" },
+    { href: `/versiones/${id}/datos/rendimientos`,   label: "Rendimientos" },
+    { href: `/versiones/${id}/datos/ventas`,         label: "Ventas" },
+    { href: `/versiones/${id}/datos/energia`,        label: "Energía" },
+    { href: `/versiones/${id}/datos/importar`,       label: "Importar Excel" },
   ];
 
   return (
