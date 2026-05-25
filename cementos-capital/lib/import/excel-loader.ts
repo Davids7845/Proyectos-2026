@@ -322,11 +322,73 @@ export async function loadParsedExcel(
 
       // Overrides contextuales por producto (mismo patrón que build_context_from_excel.ts).
       // Las claves cubren tanto el nombre completo como el abreviado del Excel.
+      // El Excel usa nombres cortos en recetas (ej. "Prehomo En Crudo" → material="Prehomo",
+      // "Mineral De Hierro En Crudo" → material="Mineral De Hierro") que no tienen alias directo.
       const RECETA_OVERRIDES: Record<string, Record<string, string>> = {
         "mezcla prehomo":  { "caliza": "CALTLVTRIT", "arcilla": "ARCTLVTRIT" },
         "prehomo":         { "caliza": "CALTLVTRIT", "arcilla": "ARCTLVTRIT" },
-        "harina cruda":    { "caliza": "CALTLVTRIT" },
-        "crudo":           { "caliza": "CALTLVTRIT" },
+        "harina cruda":    {
+          "prehomo": "MEZCPREHO",
+          "caliza": "CALTLVTRIT",
+          "mineral de hierro": "CORRHIERR",
+          "calamina": "CALAMINA",
+        },
+        "crudo":           {
+          "prehomo": "MEZCPREHO",
+          "caliza": "CALTLVTRIT",
+          "mineral de hierro": "CORRHIERR",
+          "calamina": "CALAMINA",
+        },
+        "carbon molido":   {
+          "mixtos": "CARB_MIXTO",
+          "carbones finos": "CARB_FINO",
+          "bituminoso": "CARBITUMI",
+        },
+        "carbón molido":   {
+          "mixtos": "CARB_MIXTO",
+          "carbones finos": "CARB_FINO",
+          "bituminoso": "CARBITUMI",
+        },
+        "carbon":          {
+          "mixtos": "CARB_MIXTO",
+          "carbones finos": "CARB_FINO",
+          "bituminoso": "CARBITUMI",
+        },
+        "carbón":          {
+          "mixtos": "CARB_MIXTO",
+          "carbones finos": "CARB_FINO",
+          "bituminoso": "CARBITUMI",
+        },
+        "combustibles alternos": {
+          "cdr": "CDR",
+          "llanta": "TDF",
+          "briquetas": "BRIQUETAS",
+          "chip de madera": "BRIQUETAS",
+        },
+        "alternos":        {
+          "cdr": "CDR",
+          "llanta": "TDF",
+          "briquetas": "BRIQUETAS",
+          "chip de madera": "BRIQUETAS",
+        },
+        "clinker":         {
+          "crudo": "HARINACRUD",
+          "harina cruda": "HARINACRUD",
+        },
+        "cemento ug":      {
+          "clinker": "CLINKER001",
+          "caliza": "CALIZATRI",
+          "yeso": "YESO00001",
+          "sal marina": "ADIT_MOL",
+          "finos": "CARB_FINO",
+          "puzolana": "PUZOLANA",
+          "aditivo de molienda": "ADIT_MOL",
+        },
+        "cemento art":     {
+          "clinker": "CLINKER001",
+          "caliza": "CALIZATRI",
+          "yeso": "YESO00001",
+        },
       };
       const productoNorm = norm(producto);
       const overrides = RECETA_OVERRIDES[productoNorm] ?? {};
