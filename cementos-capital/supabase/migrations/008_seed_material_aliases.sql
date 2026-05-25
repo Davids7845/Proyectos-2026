@@ -158,7 +158,37 @@ FROM (VALUES
   ('Mezcla Ponderado',               'MEZCPREHO', 'Mezcla prehomo ponderada'),
 
   -- ── Material Dique (Mining Dique) ────────────────────────
-  ('Material Dique',                  'MAT_DIQUE', 'Alias exacto Material Dique')
+  ('Material Dique',                  'MAT_DIQUE', 'Alias exacto Material Dique'),
+
+  -- ── Productos terminados (para recetas) ───────────────────
+  ('Granel Ug',                        'CEM_UG',      'Cemento UG granel'),
+  ('Granel Art',                       'CEM_ART',     'Cemento ART granel'),
+  ('Topex Ug',                         'CEM_TOPEX',   'Cemento Topex 50 kg'),
+  ('Cemento Bigbag 1.5 T',             'CEM_BIGBAG',  'Big Bag 1,5 T'),
+  ('Cemento Big Bag 1,5 T',            'CEM_BIGBAG',  'Big Bag 1,5 T alt'),
+  ('Cemento Big Bag 1.5 Toneladas',    'CEM_BIGBAG',  'Big Bag 1,5 T variante'),
+  ('Cemento Total',                    'CEM_UG',      'Cemento Total → UG genérico'),
+
+  -- ── Semielaborados (para recetas) ─────────────────────────
+  ('Clinker A Tolva',                  'CLINKER001',  'Clinker a tolva molienda'),
+  ('Clinker',                          'CLINKER001',  'Alias directo Clinker'),
+  ('Harina Cruda',                     'HARINACRUD',  'Harina cruda molino'),
+  ('Mezcla Prehomo',                   'MEZCPREHO',   'Mezcla prehomogeneización'),
+  ('Carbon Molido',                    'CARBONMOL',   'Carbón molido'),
+  ('Carbón Molido',                    'CARBONMOL',   'Carbón molido con tilde'),
+  ('Carbón Molido En Horno',           'CARBONMOL',   'Carbón molido aplicado horno'),
+
+  -- ── Finos (residuos proceso) ─────────────────────────────
+  ('Finos De Carbón',                  'CARB_FINO',   'Finos de carbón'),
+  ('Finos De Carbon',                  'CARB_FINO',   'Finos de carbón sin tilde'),
+  ('Finos De Crudo',                   'FINOS_FILT',  'Finos de crudo'),
+  ('Finos Filtro',                     'FINOS_FILT',  'Finos de filtro'),
+
+  -- ── Herramientas / otros ──────────────────────────────────
+  ('Martillo',                         'CALIZATRI',   'Costo martillo → caliza'),
+  ('Caliza Para Adiciones',            'CALIZATRI',   'Caliza para adiciones'),
+  ('Mineral De Hierro',                'CORRHIERR',   'Mineral de hierro'),
+  ('Combustibles Alternos',            'CDR',         'Combustibles alternos genérico')
 
 ) AS t(alias, codigo, notas)
 JOIN materiales m ON m.codigo = t.codigo

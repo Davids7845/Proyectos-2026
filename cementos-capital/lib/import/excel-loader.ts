@@ -95,8 +95,15 @@ export async function loadParsedExcel(
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
   if (preciosRows.length > 0) {
-    // Upsert: borramos preexistentes de la versión y reinsertamos en batch.
-    // Más simple que onConflict con coalesce(proveedor,'').
+    // Dedup: varios nombres Excel pueden mapear al mismo material_id.
+    // Cuando (material_id, proveedor, periodo) se repite, conservamos el último valor.
+    const preciosDedup = new Map<string, typeof preciosRows[number]>();
+    for (const row of preciosRows) {
+      const k = `${row.material_id}|${row.proveedor ?? ""}|${row.periodo}`;
+      preciosDedup.set(k, row);
+    }
+    const preciosToInsert = Array.from(preciosDedup.values());
+
     const { error: delErr } = await supabase
       .from("precios_insumos")
       .delete()
@@ -104,9 +111,8 @@ export async function loadParsedExcel(
     if (delErr) {
       report.errores.push({ seccion: "precios", row_excel: null, mensaje: `delete: ${delErr.message}` });
     } else {
-      // Insert en chunks de 500
-      for (let i = 0; i < preciosRows.length; i += 500) {
-        const chunk = preciosRows.slice(i, i + 500);
+      for (let i = 0; i < preciosToInsert.length; i += 500) {
+        const chunk = preciosToInsert.slice(i, i + 500);
         const { error: insErr } = await supabase.from("precios_insumos").insert(chunk);
         if (insErr) {
           report.errores.push({ seccion: "precios", row_excel: null, mensaje: insErr.message });
@@ -136,9 +142,16 @@ export async function loadParsedExcel(
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
   if (pctRows.length > 0) {
+    const pctDedup = new Map<string, typeof pctRows[number]>();
+    for (const row of pctRows) {
+      const k = `${row.material_id}|${row.proveedor ?? ""}|${row.periodo}`;
+      pctDedup.set(k, row);
+    }
+    const pctToInsert = Array.from(pctDedup.values());
+
     await supabase.from("porcentajes_consumo").delete().eq("version_id", versionId);
-    for (let i = 0; i < pctRows.length; i += 500) {
-      const chunk = pctRows.slice(i, i + 500);
+    for (let i = 0; i < pctToInsert.length; i += 500) {
+      const chunk = pctToInsert.slice(i, i + 500);
       const { error: insErr } = await supabase.from("porcentajes_consumo").insert(chunk);
       if (insErr) {
         report.errores.push({ seccion: "porcentajes_consumo", row_excel: null, mensaje: insErr.message });
