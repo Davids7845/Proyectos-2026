@@ -261,6 +261,7 @@ export async function loadParsedExcel(
       "carbon":   "carbon molido",
       "carbón":   "carbon molido",
       "clinker":  "clinker",
+      "alternos": "combustibles alternos",
       "cemento total": "cemento ug",
     };
 
@@ -287,10 +288,21 @@ export async function loadParsedExcel(
       grupos.set(k, arr);
     }
 
+    // Override de producto cuando el alias por defecto apunta a un material distinto
+    // del que el motor de cálculo espera (caso ORD20: "Alternos" → COMBALT, no CDR).
+    const RECETA_PRODUCTO_OVERRIDES: Record<string, string> = {
+      "alternos": "COMBALT",
+      "combustibles alternos": "COMBALT",
+    };
+
     for (const lineas of Array.from(grupos.values())) {
       const producto = lineas[0].producto_nombre;
       const periodo = lineas[0].periodo;
-      const productoId = resolveMaterial(idx, producto);
+      const productoNormKey = norm(producto);
+      const productoOverrideCodigo = RECETA_PRODUCTO_OVERRIDES[productoNormKey];
+      const productoId = productoOverrideCodigo
+        ? idx.byCodigo.get(productoOverrideCodigo)
+        : resolveMaterial(idx, producto);
       if (!productoId) {
         noEncontrados.add(producto);
         continue;
