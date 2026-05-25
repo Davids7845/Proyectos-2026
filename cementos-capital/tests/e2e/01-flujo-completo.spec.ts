@@ -97,7 +97,11 @@ test('Flujo completo: login → importar → calcular → validar costos → tra
 
   await test.step('Verificar /datos/recetas tiene filas', async () => {
     await page.goto(`/versiones/${versionId}/datos/recetas`);
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10_000 });
+    // La página usa acordeones por proceso, no tabla
+    await expect(page.getByText(/\d+\s+recetas/)).toBeVisible({ timeout: 10_000 });
+    const txt = await page.getByText(/\d+\s+recetas/).innerText();
+    const num = parseInt(txt.match(/\d+/)?.[0] ?? '0');
+    expect(num, `Se esperaban ≥1 receta, encontradas: ${num}`).toBeGreaterThan(0);
   });
 
   // === PASO 5: Ejecutar cálculo ===
