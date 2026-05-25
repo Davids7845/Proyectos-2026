@@ -247,6 +247,37 @@ export async function loadParsedExcel(
         .in("id", prevRecetas.map(r => r.id));
     }
 
+    // Cargar procesos una vez (fuera del loop) — incluye nombre para matching robusto.
+    const { data: allProcs } = await supabase
+      .from("procesos")
+      .select("id, material, nombre")
+      .eq("activo", true);
+
+    // Alias: nombre Excel abreviado → norm(procesos.material) para los casos que no
+    // coinciden directamente (mismo patrón que build_context_from_excel.ts ALIASES).
+    const RECETA_PROCESO_ALIASES: Record<string, string> = {
+      "prehomo":  "mezcla prehomo",
+      "crudo":    "harina cruda",
+      "carbon":   "carbon molido",
+      "carbón":   "carbon molido",
+      "clinker":  "clinker",
+      "cemento total": "cemento ug",
+    };
+
+    const resolveRecetaProceso = (producto: string): string | null => {
+      const n = norm(producto);
+      // 1) Match directo por material o nombre del proceso
+      const direct = allProcs?.find(p => norm(p.material) === n || norm(p.nombre) === n);
+      if (direct) return direct.id;
+      // 2) Vía alias
+      const aliasKey = RECETA_PROCESO_ALIASES[n];
+      if (aliasKey) {
+        const via = allProcs?.find(p => norm(p.material) === aliasKey || norm(p.nombre) === aliasKey);
+        if (via) return via.id;
+      }
+      return null;
+    };
+
     type Key = string;
     const grupos = new Map<Key, typeof parsed.recetas>();
     for (const ln of parsed.recetas) {
@@ -264,14 +295,8 @@ export async function loadParsedExcel(
         noEncontrados.add(producto);
         continue;
       }
-      // Resolver proceso: por convención producto = nombre del material asociado al ORD.
-      // Como aún no tenemos un mapeo producto→proceso, usamos el primer proceso activo.
-      const { data: procs } = await supabase
-        .from("procesos")
-        .select("id, material")
-        .eq("activo", true);
-      const proc = procs?.find(p => norm(p.material) === norm(producto));
-      if (!proc) {
+      const procId = resolveRecetaProceso(producto);
+      if (!procId) {
         report.errores.push({
           seccion: "recetas",
           row_excel: lineas[0].row_excel,
@@ -279,13 +304,12 @@ export async function loadParsedExcel(
         });
         continue;
       }
-
       const { data: rec, error: recErr } = await supabase
         .from("recetas")
         .insert({
           version_id: versionId,
           producto_id: productoId,
-          proceso_id: proc.id,
+          proceso_id: procId,
           periodo,
         })
         .select("id")
@@ -296,10 +320,13 @@ export async function loadParsedExcel(
       }
       report.recetas_creadas++;
 
-      // Overrides contextuales por producto (mismo patrón que build_context_from_excel.ts)
+      // Overrides contextuales por producto (mismo patrón que build_context_from_excel.ts).
+      // Las claves cubren tanto el nombre completo como el abreviado del Excel.
       const RECETA_OVERRIDES: Record<string, Record<string, string>> = {
         "mezcla prehomo":  { "caliza": "CALTLVTRIT", "arcilla": "ARCTLVTRIT" },
+        "prehomo":         { "caliza": "CALTLVTRIT", "arcilla": "ARCTLVTRIT" },
         "harina cruda":    { "caliza": "CALTLVTRIT" },
+        "crudo":           { "caliza": "CALTLVTRIT" },
       };
       const productoNorm = norm(producto);
       const overrides = RECETA_OVERRIDES[productoNorm] ?? {};
