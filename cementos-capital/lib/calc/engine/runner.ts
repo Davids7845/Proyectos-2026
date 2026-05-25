@@ -267,7 +267,6 @@ async function loadContext(
     { data: preciosRaw, error: precErr },
     { data: pctRaw, error: pctErr },
     { data: recetasRaw, error: recErr },
-    { data: lineasRaw, error: lnErr },
     { data: enerRaw, error: enerErr },
     { data: rendRaw, error: rendErr },
     { data: cfRaw,   error: cfErr },
@@ -281,7 +280,6 @@ async function loadContext(
     // Receta con embed de receta_lineas filtrado por FK — evita el límite de 1000 filas
     // global de Supabase cuando hay muchas versiones acumuladas.
     supabase.from("recetas").select("id, producto_id, proceso_id, periodo, receta_lineas(receta_id, material_id, porcentaje, orden)").eq("version_id", versionId),
-    Promise.resolve({ data: [], error: null }),
     sb.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
     supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
     sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
@@ -294,8 +292,6 @@ async function loadContext(
   if (precErr) throw new Error(`precios_insumos: ${precErr.message}`);
   if (pctErr) throw new Error(`porcentajes_consumo: ${pctErr.message}`);
   if (recErr) throw new Error(`recetas: ${recErr.message}`);
-  // lnErr placeholder — receta_lineas viene embebido en recetas vía PostgREST nested select
-  void lnErr;
   if (enerErr) throw new Error(`parametros_energia: ${enerErr.message}`);
   if (rendErr) throw new Error(`rendimientos: ${rendErr.message}`);
   // override tables are optional (may not exist until migration 007 is applied)
