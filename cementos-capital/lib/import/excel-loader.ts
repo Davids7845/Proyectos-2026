@@ -123,6 +123,53 @@ export async function loadParsedExcel(
       const k = `${row.material_id}|${row.proveedor ?? ""}|${row.periodo}`;
       preciosDedup.set(k, row);
     }
+
+    // PRICE_OVERRIDES: blend efectivo Excel — el promedio aritmético de la receta visible
+    // no coincide con el costo blended real (ej. CARBITUMI con factor de consumo 1.094344).
+    // El override absorbe el factor de pérdida en el precio. Sincronizado con
+    // build_context_from_excel.ts.
+    const PRICE_OVERRIDES: Record<string, number> = {
+      CARBITUMI: 306_179,
+    };
+    for (const [codigo, valor] of Object.entries(PRICE_OVERRIDES)) {
+      const matId = idx.byCodigo.get(codigo);
+      if (!matId) continue;
+      for (const row of Array.from(preciosDedup.values())) {
+        if (row.material_id === matId && (row.proveedor ?? "") === "") {
+          row.precio_unitario = valor;
+        }
+      }
+    }
+
+    // FALLBACK_PRICES: materiales internos reincorporados sin fila explícita en Excel.
+    // Insertamos precio 0 (o el valor configurado) para todos los periodos detectados,
+    // así el cascade no falla con "falta precio".
+    const FALLBACK_PRICES: Record<string, number> = {
+      FINOS_FILT: 0,  // finos filtro reincorporados — costo interno
+      RIC:        0,  // RIC — costo interno
+      CARB_FINO:  0,  // carbón finos reincorporados
+      SAL_MARINA: 0,  // sal marina (override en lugar de aliasing)
+    };
+    const periodos = Array.from(new Set(preciosRows.map(r => r.periodo)));
+    for (const [codigo, valor] of Object.entries(FALLBACK_PRICES)) {
+      const matId = idx.byCodigo.get(codigo);
+      if (!matId) continue;
+      for (const periodo of periodos) {
+        const k = `${matId}||${periodo}`;
+        if (!preciosDedup.has(k)) {
+          preciosDedup.set(k, {
+            version_id: versionId,
+            material_id: matId,
+            proveedor: null,
+            periodo,
+            precio_unitario: valor,
+            unidad: "COP/Ton",
+            moneda: "COP",
+          });
+        }
+      }
+    }
+
     const preciosToInsert = Array.from(preciosDedup.values());
 
     const { error: delErr } = await supabase
@@ -392,7 +439,7 @@ export async function loadParsedExcel(
           "caliza": "CALIZATRI",
           "yeso": "YESO00001",
           "sal marina": "ADIT_MOL",
-          "finos": "CARB_FINO",
+          "finos": "FINOS_FILT",
           "puzolana": "PUZOLANA",
           "aditivo de molienda": "ADIT_MOL",
         },
@@ -400,6 +447,10 @@ export async function loadParsedExcel(
           "clinker": "CLINKER001",
           "caliza": "CALIZATRI",
           "yeso": "YESO00001",
+          "sal marina": "ADIT_MOL",
+          "finos": "FINOS_FILT",
+          "puzolana": "PUZOLANA",
+          "aditivo de molienda": "ADIT_MOL",
         },
       };
       const productoNorm = norm(producto);
@@ -416,10 +467,14 @@ export async function loadParsedExcel(
             noEncontrados.add(ln.material_nombre);
             return null;
           }
+          const pct = Number(ln.porcentaje);
+          // Filtrar líneas con porcentaje = 0 (placeholders en Excel como "Ric En Cemento"
+          // o "Carbones Finos En Carbón" que no aportan al cálculo).
+          if (!Number.isFinite(pct) || pct === 0) return null;
           return {
             receta_id: rec.id,
             material_id: materialId,
-            porcentaje: Number(ln.porcentaje),
+            porcentaje: pct,
             orden: idx2 + 1,
           };
         })
