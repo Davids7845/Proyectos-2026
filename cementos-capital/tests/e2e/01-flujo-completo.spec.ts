@@ -60,11 +60,31 @@ test('Flujo completo: login → importar → calcular → validar costos → tra
       page.locator('h2', { hasText: 'Reporte de importación' })
     ).toBeVisible({ timeout: 60_000 });
 
+    // Capturar screenshot del reporte completo para diagnóstico
+    await page.screenshot({ path: 'test-results/import-report.png', fullPage: true });
+
     // Verificar que no hay errores críticos (error_msg en rojo)
     const errorBox = page.locator('.bg-red-50').filter({ hasText: /^Error:/ });
-    await expect(errorBox).toBeHidden({ timeout: 2_000 }).catch(() => {
-      throw new Error('La importación reportó un error. Ver screenshot.');
-    });
+    const hasError = await errorBox.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (hasError) {
+      const errText = await errorBox.innerText().catch(() => 'desconocido');
+      throw new Error(`La importación reportó un error: ${errText}`);
+    }
+
+    // Verificar que se insertaron precios (número > 0)
+    const preciosLi = page.locator('li', { hasText: /Precios insertados:/ });
+    await expect(preciosLi).toBeVisible({ timeout: 5_000 });
+    const preciosText = await preciosLi.innerText();
+    const preciosNum = parseInt(preciosText.replace(/\D/g, ''), 10);
+    if (preciosNum === 0) {
+      // Capturar la lista de materiales no encontrados para diagnóstico
+      const noEncontrados = await page.locator('ul li').allInnerTexts().catch(() => []);
+      throw new Error(
+        `Importación completó con 0 precios insertados. ` +
+        `Posible causa: materiales no encontrados en BD. ` +
+        `Muestra del reporte: ${noEncontrados.slice(0, 5).join(' | ')}`
+      );
+    }
   });
 
   // === PASO 4: Verificar datos cargados ===
