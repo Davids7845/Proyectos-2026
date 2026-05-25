@@ -8,6 +8,7 @@ import { definition as costoEnergiaProceso }    from "./costo_energia_proceso";
 import { definition as costoCombustibleHorno }  from "./costo_combustible_horno";
 import { definition as costoRepuestosProceso }  from "./costo_repuestos_proceso";
 import { definition as costoServiciosProceso }  from "./costo_servicios_proceso";
+import { definition as consumoCombustibleHorno } from "./consumo_combustible_horno";
 
 export const FORMULA_REGISTRY: Record<string, FormulaDefinition> = {
   [costoCalizaMartillo.codigo]:   costoCalizaMartillo,
@@ -19,6 +20,7 @@ export const FORMULA_REGISTRY: Record<string, FormulaDefinition> = {
   [costoCombustibleHorno.codigo]: costoCombustibleHorno,
   [costoRepuestosProceso.codigo]: costoRepuestosProceso,
   [costoServiciosProceso.codigo]: costoServiciosProceso,
+  [consumoCombustibleHorno.codigo]: consumoCombustibleHorno,
 };
 
 export function getFormula(codigo: string): FormulaDefinition {

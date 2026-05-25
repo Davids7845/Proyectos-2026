@@ -16,6 +16,7 @@ import { Ord05Clinkerizacion } from "@/lib/calc/procesos/ord05_clinkerizacion";
 import { Ord06CementoUg }      from "@/lib/calc/procesos/ord06_cemento_ug";
 import { Ord07CementoArt }     from "@/lib/calc/procesos/ord07_cemento_art";
 import { Ord16Fibrocemento }   from "@/lib/calc/procesos/ord16_fibrocemento";
+import { Ord20CombustiblesAlternos } from "@/lib/calc/procesos/ord20_combustibles_alternos";
 
 const PERIODO = "2026-01-01";
 
@@ -108,23 +109,18 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     expect(diff).toBeLessThan(0.05);
   });
 
-  // ─── ORD 5 Clinkerización — SKIP (combustible térmico es placeholder) ──
-  // El Excel reporta Clinkerización ≈ 113,463 COP/Ton; nuestra calculadora
-  // produce ≈ 59,053 porque el costo de combustible térmico (carbón + alternos
-  // + TDF + CDR) está como placeholder pendiente de Fase 2. El modelo correcto
-  // requiere: kcal_tck × pci_ponderado × precios ponderados por composicion_horno.
-  it.skip("ORD 5 Clinkerización — pending combustible Fase 2", () => {});
-
-  // ─── ORD 6/7/16 — SKIP (cascadean desde ORD 5) ─────────────────────────
-  it.skip("ORD 6 Cemento UG (granel) — pending combustible cascada Fase 2", () => {});
-  it.skip("ORD 7 Cemento ART (granel) — pending combustible cascada Fase 2", () => {});
-  it.skip("ORD 16 Fibrocemento — pending combustible cascada Fase 2", () => {});
-
-  // ─── ORD 5/6/7/16 con tolerancia laxa: confirma que la cascada funciona ─
-  // Estos sí los ejecutamos (sin combustible térmico) y validamos que la
-  // cascada se calcula y devuelve un número finito.
-  it("Cascada ORD 5 → 6/7/16 produce números finitos (sin combustible térmico)", async () => {
+  // ─── Cascada ORD 5 → 6/7/16 con modelo térmico Fase 1.6 ───────────────
+  // ORD 5 ahora incluye Carbón Molido y Alternos derivados del modelo térmico.
+  // Gap residual ≤ 10%: faltan repuestos y servicios fijos (Cargue Clinker,
+  // Gasoil, Placas, Refractarios) que se cierran en el prompt 2.
+  it("Cascada ORD 5 → 6/7/16 con tolerancias térmicas", async () => {
     const writer = new InMemoryWriter();
+    // ORD 20 primero (proporciona precio para COMBALT requerido por ORD 5)
+    const ord20 = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 20);
+    const r20 = await new Ord20CombustiblesAlternos().run({ ctx: setup.ctx, proceso: ord20, periodo: PERIODO, writer });
+    setup.ctx.costoProcesoByKey.set(`${ord20.id}|${PERIODO}`, {
+      costo_total: r20.costo_total, costo_por_ton: r20.costo_por_ton, calc_total_id: r20.calc_total_id,
+    });
     const ord5 = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 5);
     const r5 = await new Ord05Clinkerizacion().run({ ctx: setup.ctx, proceso: ord5, periodo: PERIODO, writer });
     setup.ctx.costoProcesoByKey.set(`${ord5.id}|${PERIODO}`, {
@@ -143,18 +139,27 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     const ord16 = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 16);
     const r16 = await new Ord16Fibrocemento().run({ ctx: setup.ctx, proceso: ord16, periodo: PERIODO, writer });
 
-    console.log(`[ORD5]  calc=${r5.costo_por_ton.toFixed(2)}  target=${setup.targets.get("Clinkerización")!.toFixed(2)}`);
-    console.log(`[ORD6]  calc=${r6.costo_por_ton.toFixed(2)}  target=${setup.targets.get("Cemento UG (granel)")!.toFixed(2)}`);
-    console.log(`[ORD7]  calc=${r7.costo_por_ton.toFixed(2)}  target=${setup.targets.get("Cemento ART (granel)")!.toFixed(2)}`);
-    console.log(`[ORD16] calc=${r16.costo_por_ton.toFixed(2)} target=${setup.targets.get("Fibrocemento")!.toFixed(2)}`);
+    const t5 = setup.targets.get("Clinkerización")!;
+    const t6 = setup.targets.get("Cemento UG (granel)")!;
+    const t7 = setup.targets.get("Cemento ART (granel)")!;
+    const t16 = setup.targets.get("Fibrocemento")!;
 
-    expect(Number.isFinite(r5.costo_por_ton)).toBe(true);
-    expect(Number.isFinite(r6.costo_por_ton)).toBe(true);
-    expect(Number.isFinite(r7.costo_por_ton)).toBe(true);
-    expect(Number.isFinite(r16.costo_por_ton)).toBe(true);
-    // Cascada coherente: cada proceso "downstream" debe ser ≥ el anterior con
-    // su empaque/granel correspondiente (cualitativo, no aritmético exacto).
-    expect(r6.costo_por_ton).toBeGreaterThan(r5.costo_por_ton * 0.5);
-    expect(r7.costo_por_ton).toBeGreaterThan(r5.costo_por_ton * 0.5);
+    const d5  = Math.abs(r5.costo_por_ton  - t5)  / t5;
+    const d6  = Math.abs(r6.costo_por_ton  - t6)  / t6;
+    const d7  = Math.abs(r7.costo_por_ton  - t7)  / t7;
+    const d16 = Math.abs(r16.costo_por_ton - t16) / t16;
+
+    console.log(`[ORD5]  calc=${r5.costo_por_ton.toFixed(2)}  target=${t5.toFixed(2)}  diff=${(d5*100).toFixed(2)}%`);
+    console.log(`[ORD6]  calc=${r6.costo_por_ton.toFixed(2)}  target=${t6.toFixed(2)}  diff=${(d6*100).toFixed(2)}%`);
+    console.log(`[ORD7]  calc=${r7.costo_por_ton.toFixed(2)}  target=${t7.toFixed(2)}  diff=${(d7*100).toFixed(2)}%`);
+    console.log(`[ORD16] calc=${r16.costo_por_ton.toFixed(2)} target=${t16.toFixed(2)} diff=${(d16*100).toFixed(2)}%`);
+
+    // ORD 5 sin repuestos (Placas+Refractarios+Cargue Ck+Gasoil = 7,481
+    // COP/Ton = 6.6%) — pendiente prompt 2; tolerancia ≤ 15%.
+    expect(d5).toBeLessThan(0.15);
+    expect(d6).toBeLessThan(0.05);
+    // ORD 7 hereda el gap parcial de cascada + variaciones de receta; ≤ 11%.
+    expect(d7).toBeLessThan(0.11);
+    expect(d16).toBeLessThan(0.10);
   });
 });

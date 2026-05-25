@@ -12,11 +12,12 @@ import type { CalcContext, ProcesoMeta } from "@/lib/calc/engine/context";
 
 const PERIODO = "2026-01-01";
 
-const PROC1_ID = "proc-1";
-const PROC3_ID = "proc-3";
-const PROC4_ID = "proc-4";
-const PROC5_ID = "proc-5";
-const PROC6_ID = "proc-6";
+const PROC1_ID  = "proc-1";
+const PROC3_ID  = "proc-3";
+const PROC4_ID  = "proc-4";
+const PROC5_ID  = "proc-5";
+const PROC6_ID  = "proc-6";
+const PROC20_ID = "proc-20";
 
 const MAT_CALIZA_ID     = "mat-caltlvtrit";
 const MAT_ARCILLA_ID    = "mat-arctlvtrit";
@@ -40,6 +41,7 @@ function buildContext(): CalcContext {
     { id: PROC4_ID, ord: 4, material: "CARBON MOLIDO",     nombre: "Molienda de Carbón",orden_topologico: 3 },
     { id: PROC5_ID, ord: 5, material: "CLINKER",           nombre: "Clinkerización",    orden_topologico: 6 },
     { id: PROC6_ID, ord: 6, material: "CEMENTO UG",        nombre: "Cemento UG",        orden_topologico: 7 },
+    { id: PROC20_ID, ord: 20, material: "COMBUSTIBLES ALT",nombre: "Combustibles Alternos", orden_topologico: 2 },
   ];
 
   const matsList = [
@@ -57,6 +59,7 @@ function buildContext(): CalcContext {
     { id: MAT_YESO_ID,       codigo: "YESO00001",  nombre: "Yeso",               unidad_base: "T" },
     { id: MAT_PUZOLANA_ID,   codigo: "PUZOLANA",   nombre: "Puzolana",           unidad_base: "T" },
     { id: MAT_ADIT_MOL_ID,   codigo: "ADIT_MOL",   nombre: "Aditivo Molienda",   unidad_base: "T" },
+    { id: "mat-combalt",     codigo: "COMBALT",    nombre: "Combustibles Alternos", unidad_base: "T" },
   ];
   const materialesById     = new Map(matsList.map(m => [m.id, m]));
   const materialesByCodigo = new Map(matsList.map(m => [m.codigo, m]));
@@ -137,8 +140,22 @@ function buildContext(): CalcContext {
       ["COSTO_PREHOMO_v1",         "f-pr"],
       ["COSTO_PROCESO_SUMA_v1",    "f-sm"],
       ["COSTO_MP_RECETA_v1",       "f-mp"],
+      ["CONSUMO_COMBUSTIBLE_HORNO_v1", "f-cc"],
     ]),
-    costoProcesoByKey: new Map(),
+    costoProcesoByKey: new Map([
+      [`${PROC20_ID}|${PERIODO}`, { costo_total: 300_000, costo_por_ton: 300_000, calc_total_id: "calc-ord20-stub" }],
+    ]),
+    parametrosEnergiaByPeriodo: new Map([
+      [PERIODO, {
+        periodo: PERIODO,
+        precio_contrato: 0, precio_restricciones: 0, cargos_fijos: 0,
+        kwh_ton_proceso: null, pci_combustibles: null,
+        kcal_tck_total: null, pci_ponderado_horno: null, composicion_horno: null,
+        kcal_tck: 797, pct_energia_carbones: 0.864, pct_energia_alternos: 0.135,
+        pct_energia_diesel: 0.001, pci_ponderado_carbones: 6170,
+        pci_ponderado_alternos: 5714, pci_ponderado_diesel: 10400,
+      }],
+    ]),
   };
 }
 

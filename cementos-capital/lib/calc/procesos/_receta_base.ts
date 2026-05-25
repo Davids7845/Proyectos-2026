@@ -45,6 +45,33 @@ export interface RunRecetaOpts {
    * `proceso.material` y `proceso.nombre` en lowercase.
    */
   energiaKey?: string;
+  /**
+   * Componentes derivados no listados en la receta del Excel pero que cascadean
+   * desde otros procesos. Usado por ORD 5 (Clinker) para Carbón Molido y
+   * Alternos cuyo consumo se calcula a partir del modelo térmico.
+   * Cada item produce un calculo derivado adicional que suma al costo_total.
+   */
+  extraDerivedComponents?: Array<{
+    /** Código del material producto del proceso productor (p.ej. "CARBONMOL"). */
+    material_codigo: string;
+    /** ORD del proceso productor para resolver costo arrastrado. */
+    productor_ord: number;
+    /** Etiqueta para el log (p.ej. "Carbón Molido — térmico"). */
+    label: string;
+    /**
+     * Calcula el consumo (Ton combustible / Ton producto) a partir del contexto
+     * y periodo. Debe devolver el valor + metadata para el log de trazabilidad.
+     */
+    consumo_calculator: (
+      ctx: CalcContext,
+      periodo: Periodo,
+    ) => {
+      valor: number;
+      formula_codigo: string;
+      formula_expresion: string;
+      parametros_entrada: Record<string, unknown>;
+    };
+  }>;
 }
 
 export async function runRecetaProcess(
@@ -197,23 +224,67 @@ export async function runRecetaProcess(
     }
   }
 
+  // ─── Componentes derivados extra (Fase 1.6) ──────────────────────────────
+  // ORD 5 (Clinker) usa esto para sumar Carbón Molido + Alternos cuyo consumo
+  // viene del modelo térmico (no de la receta del Excel).
   let costo_combustible: number | null = null;
-  let combustibleCalcId: UUID | null = null;
-  if (opts.conCombustible) {
-    const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
-    const pci = paramsEner?.pci_combustibles ?? {};
-    // Modelo simplificado Fase 1.5: usa composicion_horno (% por componente)
-    // multiplicado por la energía total horno / pci ponderado para deducir
-    // kg/ton, luego × precio del combustible. Como aproximación inicial usamos
-    // sólo (kcal_tck_total / pci_ponderado_horno) cuando esté disponible.
-    if (paramsEner?.kcal_tck_total && paramsEner.pci_ponderado_horno && paramsEner.pci_ponderado_horno > 0) {
-      // kg/ton_clinker = (Kcal_total / PCI_pond) / ton_clinker_periodo
-      // Sin produccion_ton aquí no podemos cerrar — dejamos como TODO Fase 2.
-      // Por ahora el bloque es no-op para no afectar tests; cuando un caso real
-      // lo requiera se completa la fórmula.
+  const extraCalcIds: UUID[] = [];
+  const extraRolDeps: Record<string, string> = {};
+  if (opts.extraDerivedComponents && opts.extraDerivedComponents.length > 0) {
+    let sumaExtra = 0;
+    for (const ex of opts.extraDerivedComponents) {
+      const productor = ctx.procesos.find(p => p.ord === ex.productor_ord);
+      if (!productor) throw new Error(`${errPrefix} ${periodo}: no se encontró proceso productor ORD ${ex.productor_ord} para ${ex.material_codigo}`);
+      const arrastrado = ctx.costoProcesoByKey.get(`${productor.id}|${periodo}`);
+      if (!arrastrado) throw new Error(`${errPrefix} ${periodo}: ORD ${ex.productor_ord} aún no calculado (requerido para ${ex.material_codigo})`);
+      const mat = ctx.materialesByCodigo.get(ex.material_codigo);
+      if (!mat) throw new Error(`${errPrefix} ${periodo}: material ${ex.material_codigo} no en context`);
+
+      const consumoRes = ex.consumo_calculator(ctx, periodo);
+      const precioUnit = arrastrado.costo_por_ton;
+      const costoExtra = consumoRes.valor * precioUnit;
+      sumaExtra += costoExtra;
+
+      const consumoCalcId = await writer.log({
+        calculo_tipo: "consumo_combustible_horno",
+        proceso_id: proceso.id,
+        material_id: mat.id,
+        periodo,
+        concepto: `Consumo ${ex.label} (modelo térmico)`,
+        valor_resultado: consumoRes.valor,
+        unidad: "Ton/Ton",
+        formula_codigo: consumoRes.formula_codigo,
+        formula_expresion: consumoRes.formula_expresion,
+        parametros_entrada: consumoRes.parametros_entrada,
+        nivel_jerarquia: 2,
+      });
+
+      const costoExtraId = await writer.log({
+        calculo_tipo: "costo_componente_derivado_termico",
+        proceso_id: proceso.id,
+        material_id: mat.id,
+        periodo,
+        concepto: `Costo ${ex.label} = consumo × precio arrastrado ORD ${ex.productor_ord}`,
+        valor_resultado: costoExtra,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_PROCESO_SUMA_v1",
+        formula_expresion: `${consumoRes.valor} × ${precioUnit} = ${costoExtra}`,
+        parametros_entrada: { consumo: consumoRes.valor, precio_arrastrado: precioUnit },
+        nivel_jerarquia: 1,
+        depende_de: [consumoCalcId, arrastrado.calc_total_id],
+        rol_dependencias: {
+          [consumoCalcId]: "consumo",
+          [arrastrado.calc_total_id]: "precio_arrastrado",
+        },
+      });
+      extraCalcIds.push(costoExtraId);
+      extraRolDeps[costoExtraId] = `costo_${ex.material_codigo.toLowerCase()}`;
     }
-    // Variante alternativa: ver si hay items_json en parametros_entrada futuro.
-    void pci; void combustibleCalcId;
+    costo_combustible = sumaExtra;
+  } else if (opts.conCombustible) {
+    // Placeholder histórico (Fase 1.5) — sin extraDerivedComponents es no-op.
+    const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
+    void paramsEner;
   }
 
   const sumaExtras = (costo_energia ?? 0) + (costo_combustible ?? 0);
@@ -222,7 +293,10 @@ export async function runRecetaProcess(
   const dependeDe: UUID[] = [mpId];
   const rolDepsTotal: Record<string, string> = { [mpId]: "costo_mp" };
   if (energiaCalcId)     { dependeDe.push(energiaCalcId);     rolDepsTotal[energiaCalcId]     = "costo_energia"; }
-  if (combustibleCalcId) { dependeDe.push(combustibleCalcId); rolDepsTotal[combustibleCalcId] = "costo_combustible"; }
+  for (const ecid of extraCalcIds) {
+    dependeDe.push(ecid);
+    rolDepsTotal[ecid] = extraRolDeps[ecid];
+  }
 
   const totalId = await writer.log({
     calculo_tipo: "costo_proceso_total",

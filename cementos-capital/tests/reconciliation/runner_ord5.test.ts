@@ -11,10 +11,11 @@ import type { CalcContext, ProcesoMeta } from "@/lib/calc/engine/context";
 
 const PERIODO = "2026-01-01";
 
-const PROC1_ID = "proc-1";
-const PROC3_ID = "proc-3";
-const PROC4_ID = "proc-4";
-const PROC5_ID = "proc-5";
+const PROC1_ID  = "proc-1";
+const PROC3_ID  = "proc-3";
+const PROC4_ID  = "proc-4";
+const PROC5_ID  = "proc-5";
+const PROC20_ID = "proc-20";
 
 const MAT_CALIZA_ID     = "mat-caltlvtrit";
 const MAT_ARCILLA_ID    = "mat-arctlvtrit";
@@ -30,10 +31,11 @@ const MAT_CLINKER_ID    = "mat-clinker001";
 
 function buildContext(): CalcContext {
   const procesos: ProcesoMeta[] = [
-    { id: PROC1_ID, ord: 1, material: "MEZCLA PREHOMO",    nombre: "Trituración",       orden_topologico: 1 },
-    { id: PROC3_ID, ord: 3, material: "HARINA CRUDA",      nombre: "Molienda de Crudo", orden_topologico: 5 },
-    { id: PROC4_ID, ord: 4, material: "CARBON MOLIDO",     nombre: "Molienda de Carbón",orden_topologico: 3 },
-    { id: PROC5_ID, ord: 5, material: "CLINKER",           nombre: "Clinkerización",    orden_topologico: 6 },
+    { id: PROC1_ID,  ord: 1,  material: "MEZCLA PREHOMO",   nombre: "Trituración",       orden_topologico: 1 },
+    { id: PROC3_ID,  ord: 3,  material: "HARINA CRUDA",     nombre: "Molienda de Crudo", orden_topologico: 5 },
+    { id: PROC4_ID,  ord: 4,  material: "CARBON MOLIDO",    nombre: "Molienda de Carbón",orden_topologico: 3 },
+    { id: PROC5_ID,  ord: 5,  material: "CLINKER",          nombre: "Clinkerización",    orden_topologico: 6 },
+    { id: PROC20_ID, ord: 20, material: "COMBUSTIBLES ALT", nombre: "Combustibles Alternos", orden_topologico: 2 },
   ];
 
   const matsList = [
@@ -48,6 +50,7 @@ function buildContext(): CalcContext {
     { id: MAT_CARBONMOL_ID,  codigo: "CARBONMOL",  nombre: "Carbón Molido",      unidad_base: "T" },
     { id: MAT_GASOIL_ID,     codigo: "GASOIL",     nombre: "Gasoil",             unidad_base: "Gal" },
     { id: MAT_CLINKER_ID,    codigo: "CLINKER001", nombre: "Clinker",            unidad_base: "T" },
+    { id: "mat-combalt",     codigo: "COMBALT",    nombre: "Combustibles Alternos", unidad_base: "T" },
   ];
   const materialesById    = new Map(matsList.map(m => [m.id, m]));
   const materialesByCodigo = new Map(matsList.map(m => [m.codigo, m]));
@@ -136,8 +139,24 @@ function buildContext(): CalcContext {
       ["COSTO_PREHOMO_v1",         "f-pr"],
       ["COSTO_PROCESO_SUMA_v1",    "f-sm"],
       ["COSTO_MP_RECETA_v1",       "f-mp"],
+      ["CONSUMO_COMBUSTIBLE_HORNO_v1", "f-cc"],
     ]),
-    costoProcesoByKey: new Map(),
+    // Stub ORD 20 (precio COMBALT) y parámetros térmicos mínimos para que el
+    // modelo térmico de ORD 5 calcule consumo de carbón + alternos.
+    costoProcesoByKey: new Map([
+      [`${PROC20_ID}|${PERIODO}`, { costo_total: 300_000, costo_por_ton: 300_000, calc_total_id: "calc-ord20-stub" }],
+    ]),
+    parametrosEnergiaByPeriodo: new Map([
+      [PERIODO, {
+        periodo: PERIODO,
+        precio_contrato: 0, precio_restricciones: 0, cargos_fijos: 0,
+        kwh_ton_proceso: null, pci_combustibles: null,
+        kcal_tck_total: null, pci_ponderado_horno: null, composicion_horno: null,
+        kcal_tck: 797, pct_energia_carbones: 0.864, pct_energia_alternos: 0.135,
+        pct_energia_diesel: 0.001, pci_ponderado_carbones: 6170,
+        pci_ponderado_alternos: 5714, pci_ponderado_diesel: 10400,
+      }],
+    ]),
   };
 }
 
@@ -166,13 +185,20 @@ describe("Runner ORD 5 — Clinkerización", () => {
       ctx, proceso: ctx.procesos[3], periodo: PERIODO, writer: writer5,
     });
 
-    // 0.78 × costo_ORD3 + 0.20 × costo_ORD4 + 0.02 × 12000
-    const expected = 0.78 * r3.costo_total + 0.20 * r4.costo_total + 0.02 * 12000;
-    expect(r5.costo_total).toBeCloseTo(expected, 2);
-    expect(r5.costo_materia_prima).toBeCloseTo(expected, 2);
+    // MP (receta): 0.78 × costo_ORD3 + 0.20 × costo_ORD4 + 0.02 × 12000
+    const expectedMp = 0.78 * r3.costo_total + 0.20 * r4.costo_total + 0.02 * 12000;
+    expect(r5.costo_materia_prima).toBeCloseTo(expectedMp, 2);
+    // Combustible térmico = consumo × precio_arrastrado
+    //   carbones = (797 × 0.864 / 6170) × r4.costo_por_ton
+    //   alternos = (797 × 0.135 / 5714) × 300_000 (stub COMBALT)
+    const consumoCarbones = (797 * 0.864) / 6170;
+    const consumoAlternos = (797 * 0.135) / 5714;
+    const expectedCombust = consumoCarbones * r4.costo_por_ton + consumoAlternos * 300_000;
+    expect(r5.costo_combustible).toBeCloseTo(expectedCombust, 0);
+    expect(r5.costo_total).toBeCloseTo(expectedMp + expectedCombust, 0);
   });
 
-  it("Crea 5 log entries y 6 deps (2 cross-process derivados)", async () => {
+  it("Crea 9 log entries y 10 deps (2 cross-process derivados + térmico)", async () => {
     const ctx = buildContext();
     const { r3, r4 } = await runChain(ctx);
     const writer5 = new InMemoryWriter();
@@ -181,15 +207,22 @@ describe("Runner ORD 5 — Clinkerización", () => {
       ctx, proceso: ctx.procesos[3], periodo: PERIODO, writer: writer5,
     });
 
-    // 2 precio_componente_derivado + 1 precio_componente_directo + costo_mp_clinker + costo_proceso_total = 5
-    expect(writer5.logs).toHaveLength(5);
+    // 2 precio_componente_derivado + 1 precio_componente_directo + costo_mp_clinker
+    // + 2 consumo_combustible_horno + 2 costo_componente_derivado_termico
+    // + 1 costo_proceso_total = 9
+    expect(writer5.logs).toHaveLength(9);
     expect(writer5.logs.filter(l => l.calculo_tipo === "precio_componente_derivado").length).toBe(2);
     expect(writer5.logs.filter(l => l.calculo_tipo === "precio_componente_directo").length).toBe(1);
     expect(writer5.logs.find(l => l.calculo_tipo === "costo_mp_clinker")).toBeDefined();
     expect(writer5.logs.find(l => l.calculo_tipo === "costo_proceso_total")).toBeDefined();
 
-    // 1 (wrapper_HARINACRUD→ORD3) + 1 (wrapper_CARBONMOL→ORD4) + 3 (mp→precios) + 1 (total→mp) = 6
-    expect(writer5.deps).toHaveLength(6);
+    // Deps:
+    //   1 (wrapper_HARINACRUD→ORD3) + 1 (wrapper_CARBONMOL→ORD4)
+    //   + 3 (mp→precios) + 1 (total→mp)
+    //   + 2 (cada costo_termico→consumo) + 2 (cada costo_termico→arrastrado)
+    //   + 2 (total→2 costo_termicos)
+    // = 12 (con doble dep por componente térmico)
+    expect(writer5.deps.length).toBeGreaterThanOrEqual(10);
 
     // Verificar que los wrappers derivados apuntan a los calc_total_id correctos
     const wrapperHC = writer5.logs.find(

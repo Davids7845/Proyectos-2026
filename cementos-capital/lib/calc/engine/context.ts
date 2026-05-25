@@ -59,6 +59,14 @@ export interface ParametrosEnergiaCtx {
   kcal_tck_total: number | null;
   pci_ponderado_horno: number | null;
   composicion_horno: Record<string, number> | null; // componente → fracción 0..1
+  // ── Modelo térmico horno (Fase 1.6) ───────────────────────────────
+  kcal_tck:                number | null;  // Kcal/Tck del horno (fila 428 "Prueba PCI")
+  pct_energia_carbones:    number | null;  // fracción 0..1 (fila 411)
+  pct_energia_alternos:    number | null;  // fila 410
+  pct_energia_diesel:      number | null;  // fila 409
+  pci_ponderado_carbones:  number | null;  // Kcal/kg ponderado por masa Mixto/Bituminoso
+  pci_ponderado_alternos:  number | null;  // Kcal/kg ponderado por CDR/TDF
+  pci_ponderado_diesel:    number | null;  // Kcal/kg Diesel (fila 412)
 }
 
 export interface RendimientoCtx {

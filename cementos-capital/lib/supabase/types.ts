@@ -739,10 +739,17 @@ export type Database = {
           cargos_fijos: number | null
           composicion_horno: Json | null
           id: string
+          kcal_tck: number | null
           kcal_tck_total: number | null
           kwh_ton_proceso: Json | null
           pci_combustibles: Json | null
+          pci_ponderado_alternos: number | null
+          pci_ponderado_carbones: number | null
+          pci_ponderado_diesel: number | null
           pci_ponderado_horno: number | null
+          pct_energia_alternos: number | null
+          pct_energia_carbones: number | null
+          pct_energia_diesel: number | null
           periodo: string
           precio_contrato: number | null
           precio_restricciones: number | null
@@ -752,10 +759,17 @@ export type Database = {
           cargos_fijos?: number | null
           composicion_horno?: Json | null
           id?: string
+          kcal_tck?: number | null
           kcal_tck_total?: number | null
           kwh_ton_proceso?: Json | null
           pci_combustibles?: Json | null
+          pci_ponderado_alternos?: number | null
+          pci_ponderado_carbones?: number | null
+          pci_ponderado_diesel?: number | null
           pci_ponderado_horno?: number | null
+          pct_energia_alternos?: number | null
+          pct_energia_carbones?: number | null
+          pct_energia_diesel?: number | null
           periodo: string
           precio_contrato?: number | null
           precio_restricciones?: number | null
@@ -765,10 +779,17 @@ export type Database = {
           cargos_fijos?: number | null
           composicion_horno?: Json | null
           id?: string
+          kcal_tck?: number | null
           kcal_tck_total?: number | null
           kwh_ton_proceso?: Json | null
           pci_combustibles?: Json | null
+          pci_ponderado_alternos?: number | null
+          pci_ponderado_carbones?: number | null
+          pci_ponderado_diesel?: number | null
           pci_ponderado_horno?: number | null
+          pct_energia_alternos?: number | null
+          pct_energia_carbones?: number | null
+          pct_energia_diesel?: number | null
           periodo?: string
           precio_contrato?: number | null
           precio_restricciones?: number | null

@@ -354,6 +354,9 @@ export function buildContextFromExcel(
         periodo: p, precio_contrato: null, precio_restricciones: null, cargos_fijos: null,
         kwh_ton_proceso: null, pci_combustibles: null,
         kcal_tck_total: null, pci_ponderado_horno: null, composicion_horno: null,
+        kcal_tck: null,
+        pct_energia_carbones: null, pct_energia_alternos: null, pct_energia_diesel: null,
+        pci_ponderado_carbones: null, pci_ponderado_alternos: null, pci_ponderado_diesel: null,
       };
       parametrosEnergiaByPeriodo.set(p, cur);
     }
@@ -372,11 +375,64 @@ export function buildContextFromExcel(
     const row = ensure(c.periodo);
     row.pci_combustibles = { ...(row.pci_combustibles ?? {}), [c.proveedor]: c.pci };
   }
+  // Buffer crudo para reconstruir PCIs ponderados después
+  const termRaw: Record<Periodo, {
+    masa_mixto?: number; masa_bitumin?: number; masa_fino?: number;
+    pct_cdr?: number; pct_tdf?: number;
+    pci_mixto?: number; pci_bitumin?: number; pci_fino?: number;
+    pci_cdr?: number; pci_tdf?: number; pci_diesel?: number;
+    pct_carbones?: number; pct_alternos?: number; pct_diesel?: number;
+    kcal_tck?: number;
+  }> = {};
+  const bufFor = (p: Periodo) => (termRaw[p] ??= {});
+
   for (const t of parsed.energia_termica) {
     const row = ensure(t.periodo);
     if (t.campo === "kcal_tck_total") row.kcal_tck_total = t.valor;
     else if (t.campo === "composicion" && t.componente) {
       row.composicion_horno = { ...(row.composicion_horno ?? {}), [t.componente]: t.valor };
+    }
+
+    // Extracción específica del modelo térmico (campo "otro" o "pci_seco")
+    const comp = (t.componente ?? "").toLowerCase();
+    const buf = bufFor(t.periodo);
+    if (/prueba pci/.test(comp))                                buf.kcal_tck = t.valor;
+    else if (/^energía carbones|^energia carbones/.test(comp))  buf.pct_carbones = t.valor;
+    else if (/^energía alternos|^energia alternos/.test(comp))  buf.pct_alternos = t.valor;
+    else if (/^energía diesel|^energia diesel/.test(comp))      buf.pct_diesel = t.valor;
+    else if (/carbón mixto seco \(masa\)|carbon mixto seco \(masa\)/.test(comp))            buf.masa_mixto = t.valor;
+    else if (/carbón bituminoso seco \(masa\)|carbon bituminoso seco \(masa\)/.test(comp))  buf.masa_bitumin = t.valor;
+    else if (/carbón fino seco \(masa\)|carbon fino seco \(masa\)/.test(comp))              buf.masa_fino = t.valor;
+    else if (/^cdr seco/.test(comp))                            buf.pct_cdr = t.valor;
+    else if (/^tdf seco/.test(comp))                            buf.pct_tdf = t.valor;
+    else if (/pci ponderado carbón mixto|pci ponderado carbon mixto/.test(comp))           buf.pci_mixto = t.valor;
+    else if (/pci ponderado carbón bituminoso|pci ponderado carbon bituminoso/.test(comp)) buf.pci_bitumin = t.valor;
+    else if (/pci ponderado carbón fino|pci ponderado carbon fino/.test(comp))             buf.pci_fino = t.valor;
+    else if (/pci ponderado cdr/.test(comp))                    buf.pci_cdr = t.valor;
+    else if (/pci ponderado tdf/.test(comp))                    buf.pci_tdf = t.valor;
+    else if (/pci ponderado diesel/.test(comp))                 buf.pci_diesel = t.valor;
+  }
+
+  // Volcar buffer → row con cálculos ponderados
+  for (const [per, buf] of Object.entries(termRaw)) {
+    const row = ensure(per);
+    if (buf.kcal_tck != null)     row.kcal_tck = buf.kcal_tck;
+    if (buf.pct_carbones != null) row.pct_energia_carbones = buf.pct_carbones;
+    if (buf.pct_alternos != null) row.pct_energia_alternos = buf.pct_alternos;
+    if (buf.pct_diesel != null)   row.pct_energia_diesel = buf.pct_diesel;
+    if (buf.pci_diesel != null)   row.pci_ponderado_diesel = buf.pci_diesel;
+    // PCI ponderado Carbones = masa_mixto × PCI_mixto + masa_bitumin × PCI_bitumin (+ fino)
+    const partesC: Array<[number | undefined, number | undefined]> = [
+      [buf.masa_mixto, buf.pci_mixto],
+      [buf.masa_bitumin, buf.pci_bitumin],
+      [buf.masa_fino, buf.pci_fino],
+    ];
+    let sumC = 0; let validC = false;
+    for (const [m, p] of partesC) if (m != null && p != null) { sumC += m * p; validC = true; }
+    if (validC) row.pci_ponderado_carbones = sumC;
+    // PCI ponderado Alternos = pct_cdr × PCI_cdr + pct_tdf × PCI_tdf
+    if (buf.pct_cdr != null && buf.pci_cdr != null && buf.pct_tdf != null && buf.pci_tdf != null) {
+      row.pci_ponderado_alternos = buf.pct_cdr * buf.pci_cdr + buf.pct_tdf * buf.pci_tdf;
     }
   }
 

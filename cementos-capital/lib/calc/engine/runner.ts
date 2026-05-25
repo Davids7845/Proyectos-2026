@@ -269,7 +269,7 @@ async function loadContext(
     supabase.from("porcentajes_consumo").select("material_id, proveedor, periodo, porcentaje").eq("version_id", versionId),
     supabase.from("recetas").select("id, producto_id, proceso_id, periodo").eq("version_id", versionId),
     supabase.from("receta_lineas").select("receta_id, material_id, porcentaje, orden"),
-    supabase.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno").eq("version_id", versionId),
+    supabase.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
     supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
   ]);
 
@@ -357,6 +357,13 @@ async function loadContext(
       kcal_tck_total:       e.kcal_tck_total       != null ? Number(e.kcal_tck_total)       : null,
       pci_ponderado_horno:  e.pci_ponderado_horno  != null ? Number(e.pci_ponderado_horno)  : null,
       composicion_horno:    (e.composicion_horno as Record<string, number> | null) ?? null,
+      kcal_tck:                (e as any).kcal_tck                != null ? Number((e as any).kcal_tck)                : null,
+      pct_energia_carbones:    (e as any).pct_energia_carbones    != null ? Number((e as any).pct_energia_carbones)    : null,
+      pct_energia_alternos:    (e as any).pct_energia_alternos    != null ? Number((e as any).pct_energia_alternos)    : null,
+      pct_energia_diesel:      (e as any).pct_energia_diesel      != null ? Number((e as any).pct_energia_diesel)      : null,
+      pci_ponderado_carbones:  (e as any).pci_ponderado_carbones  != null ? Number((e as any).pci_ponderado_carbones)  : null,
+      pci_ponderado_alternos:  (e as any).pci_ponderado_alternos  != null ? Number((e as any).pci_ponderado_alternos)  : null,
+      pci_ponderado_diesel:    (e as any).pci_ponderado_diesel    != null ? Number((e as any).pci_ponderado_diesel)    : null,
     });
   }
 

@@ -1,7 +1,13 @@
 // ORD 5 — Clinkerización (producto: CLINKER)
-// Receta: HARINACRUD (arrastre ORD 3) + CARBONMOL (arrastre ORD 4) + directos.
+// Receta visible del Excel: sólo HARINACRUD (arrastre ORD 3).
+// El consumo de CARBONMOL (ORD 4) y COMBALT (ORD 20) NO está en la sección
+// Recetas — se calcula a partir del modelo térmico del horno:
+//   consumo = (kcal_tck × pct_energia) / pci_ponderado / 1000
+//
+// Fase 1.6: agregamos esos dos componentes vía extraDerivedComponents.
 
 import { runRecetaProcess } from "./_receta_base";
+import { fn as calcConsumoCombustible } from "@/lib/calc/formulas/consumo_combustible_horno";
 import type {
   CalcContext,
   CalcWriter,
@@ -14,8 +20,31 @@ import type {
 const DERIVED_BY_CODIGO: Record<string, number> = {
   HARINACRUD: 3,
   CARBONMOL:  4,
-  COMBALT:   20, // combustibles alternos (ORD 20) — si aparece en la receta
+  COMBALT:   20,
 };
+
+function buildConsumoCalc(combustible: "carbones" | "alternos") {
+  return (ctx: CalcContext, periodo: Periodo) => {
+    const en = ctx.parametrosEnergiaByPeriodo?.get(periodo);
+    if (!en) throw new Error(`ORD5 ${periodo}: faltan parámetros de energía (modelo térmico)`);
+    const kcal_tck = en.kcal_tck;
+    const pct = combustible === "carbones" ? en.pct_energia_carbones : en.pct_energia_alternos;
+    const pci = combustible === "carbones" ? en.pci_ponderado_carbones : en.pci_ponderado_alternos;
+    if (kcal_tck == null || pct == null || pci == null) {
+      throw new Error(
+        `ORD5 ${periodo}: faltan parámetros térmicos de ${combustible} `
+        + `(kcal_tck=${kcal_tck}, pct_energia=${pct}, pci_ponderado=${pci})`
+      );
+    }
+    const res = calcConsumoCombustible({ kcal_tck, pct_energia: pct, pci_ponderado: pci });
+    return {
+      valor: res.valor,
+      formula_codigo: "CONSUMO_COMBUSTIBLE_HORNO_v1",
+      formula_expresion: res.expresion_evaluada,
+      parametros_entrada: { kcal_tck, pct_energia: pct, pci_ponderado: pci },
+    };
+  };
+}
 
 export class Ord05Clinkerizacion implements ProcesoCalculator {
   ord = 5;
@@ -34,7 +63,20 @@ export class Ord05Clinkerizacion implements ProcesoCalculator {
       derivedByCodigo: DERIVED_BY_CODIGO,
       conEnergia: true,
       energiaKey: "clinkerización",
-      conCombustible: true,
+      extraDerivedComponents: [
+        {
+          material_codigo: "CARBONMOL",
+          productor_ord: 4,
+          label: "Carbón Molido — térmico",
+          consumo_calculator: buildConsumoCalc("carbones"),
+        },
+        {
+          material_codigo: "COMBALT",
+          productor_ord: 20,
+          label: "Combustibles Alternos — térmico",
+          consumo_calculator: buildConsumoCalc("alternos"),
+        },
+      ],
     });
   }
 }
