@@ -10,8 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:reconciliation": "vitest run tests/reconciliation",
-    "db:status": "tsx scripts/db-status.ts",
-    "db:smoke": "tsx scripts/db-smoke-test.ts",
+    "db:status": "tsx --env-file .env.local scripts/db-status.ts",
+    "db:smoke": "tsx --env-file .env.local scripts/db-smoke-test.ts",
     "predeploy": "npm run test && npm run build"
   },
   "dependencies": {
