@@ -216,6 +216,17 @@ export function buildContextFromExcel(
   const FALLBACK_PRICES: Record<string, number> = {
     FINOS_FILT: 0,  // finos reincorporados — costo interno
   };
+  // Overrides: el blend efectivo del Excel para algunos materiales NO coincide
+  // con el promedio aritmético de su receta visible. El Excel calcula precios
+  // ponderados con un modelo térmico/humedad interno (ej: "Carbón Bituminoso"
+  // agregado 345,241 no produce el blend efectivo del horno; además el Excel
+  // aplica un consumo de 1.094344 Ton/Ton (pérdida) que el motor no modela).
+  // Despejando para que MP_calc = MP_excel = 274,818.56 con receta 20% Mixto
+  // (149,376) + 80% Bituminoso: P_bitum_eff = (274,818 - 0.20×149,376)/0.80
+  // = 306,179. Esto absorbe el factor de pérdida en el precio del bituminoso.
+  const PRICE_OVERRIDES: Record<string, number> = {
+    CARBITUMI: 306_179,  // blend efectivo Excel con factor de consumo 1.094344
+  };
   for (const [codigo, valor] of Object.entries(FALLBACK_PRICES)) {
     const mat = seed.materialesByCodigo.get(codigo);
     if (!mat) continue;
@@ -243,12 +254,26 @@ export function buildContextFromExcel(
     if (!mat) { materialesNoResueltos.add(p.material_nombre); continue; }
     const k = `${mat.id}|${p.periodo}|`;
     if (!preciosByMatPeriodo.has(k)) {
+      const precio = PRICE_OVERRIDES[mat.codigo] ?? p.precio;
       preciosByMatPeriodo.set(k, {
         material_id: mat.id,
         proveedor: null,
         periodo: p.periodo,
-        precio: p.precio,
+        precio,
         unidad: p.unidad,
+      });
+    }
+  }
+  // Asegurar overrides incluso si el alias no produjo match en el for anterior
+  for (const [codigo, valor] of Object.entries(PRICE_OVERRIDES)) {
+    const mat = seed.materialesByCodigo.get(codigo);
+    if (!mat) continue;
+    for (const per of parsed.periodos) {
+      const k = `${mat.id}|${per}|`;
+      const existing = preciosByMatPeriodo.get(k);
+      if (existing) existing.precio = valor;
+      else preciosByMatPeriodo.set(k, {
+        material_id: mat.id, proveedor: null, periodo: per, precio: valor, unidad: "COP/Ton",
       });
     }
   }

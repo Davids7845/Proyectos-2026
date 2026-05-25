@@ -90,7 +90,12 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
   });
 
   // ─── ORD 4 Molienda Carbón ──────────────────────────────────────────────
-  it("ORD 4 Molienda Carbón (MP + energía) ≤ 7%", async () => {
+  // Tolerancia ≤ 5%: el MP reconcilia ≤ 0.5% con PRICE_OVERRIDE de CARBITUMI
+  // (absorbe factor de pérdida 1.094344). Gap residual ~3.6% por servicios
+  // fijos faltantes (Descargue Finos 2,078 + Cargador 7,722 + Cuerpos
+  // Moledores 1,035 = 10,835 COP/Ton) marcados para prompt 2, + ~0.7%
+  // por diferencia en precio energía.
+  it("ORD 4 Molienda Carbón (MP + energía) ≤ 5%", async () => {
     const target = setup.targets.get("Molienda Carbón")!;
     const writer = new InMemoryWriter();
     const proc = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 4);
@@ -100,7 +105,7 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     });
     const diff = Math.abs(r.costo_por_ton - target) / target;
     console.log(`[ORD4] calc=${r.costo_por_ton.toFixed(2)} target=${target.toFixed(2)} diff=${(diff*100).toFixed(2)}%`);
-    expect(diff).toBeLessThan(0.07);
+    expect(diff).toBeLessThan(0.05);
   });
 
   // ─── ORD 5 Clinkerización — SKIP (combustible térmico es placeholder) ──
