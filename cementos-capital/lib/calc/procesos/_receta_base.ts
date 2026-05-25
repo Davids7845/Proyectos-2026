@@ -71,6 +71,7 @@ export interface RunRecetaOpts {
     consumo_calculator: (
       ctx: CalcContext,
       periodo: Periodo,
+      proceso_id: UUID,
     ) => {
       valor: number;
       formula_codigo: string;
@@ -104,6 +105,10 @@ export async function runRecetaProcess(
     const mat = ctx.materialesById.get(ln.material_id);
     if (!mat) throw new Error(`${errPrefix} ${periodo}: material ${ln.material_id} no encontrado`);
 
+    // Consumo override (Fase 1.7): Excel Costo!N sustituye porcentaje de receta
+    const consumoKey = `${proceso.id}|${mat.codigo}|${periodo}`;
+    const pct = ctx.consumoOverrideByKey?.get(consumoKey) ?? ln.porcentaje;
+
     let precio: number;
     let precioCalcId: UUID;
     const productorOrd = derivedByCodigo[mat.codigo];
@@ -132,30 +137,50 @@ export async function runRecetaProcess(
         rol_dependencias: { [arrastrado.calc_total_id]: "costo_arrastrado" },
       });
     } else {
-      const ki = `${mat.id}|${periodo}|`;
-      const p = ctx.preciosByMatPeriodo.get(ki);
-      if (!p) throw new Error(`${errPrefix} ${periodo}: falta precio para ${mat.codigo}`);
-      precio = p.precio;
+      // Precio override (Fase 1.7): Excel Costo!O sustituye precio de Datos
+      const precioOverrideKey = `${proceso.id}|${mat.codigo}|${periodo}`;
+      const precioOverride = ctx.precioMpOverrideByKey?.get(precioOverrideKey);
+      if (precioOverride != null) {
+        precio = precioOverride;
+        precioCalcId = await writer.log({
+          calculo_tipo: "precio_componente_directo",
+          proceso_id: proceso.id,
+          material_id: mat.id,
+          periodo,
+          concepto: `Precio ${mat.nombre} (override budget)`,
+          valor_resultado: precio,
+          unidad: "COP/Ton",
+          formula_codigo: "COSTO_PROCESO_SUMA_v1",
+          formula_expresion: `precio = ${precio} (Excel Costo!O override)`,
+          parametros_entrada: { precio_override: precio, fuente: "Excel Costo!O" },
+          nivel_jerarquia: 2,
+        });
+      } else {
+        const ki = `${mat.id}|${periodo}|`;
+        const p = ctx.preciosByMatPeriodo.get(ki);
+        if (!p) throw new Error(`${errPrefix} ${periodo}: falta precio para ${mat.codigo}`);
+        precio = p.precio;
 
-      precioCalcId = await writer.log({
-        calculo_tipo: "precio_componente_directo",
-        proceso_id: proceso.id,
-        material_id: mat.id,
-        periodo,
-        concepto: `Precio ${mat.nombre}`,
-        valor_resultado: precio,
-        unidad: "COP/Ton",
-        formula_codigo: "COSTO_PROCESO_SUMA_v1",
-        formula_expresion: `precio = ${precio} (precios_insumos)`,
-        parametros_entrada: { precio_directo: precio },
-        nivel_jerarquia: 2,
-      });
+        precioCalcId = await writer.log({
+          calculo_tipo: "precio_componente_directo",
+          proceso_id: proceso.id,
+          material_id: mat.id,
+          periodo,
+          concepto: `Precio ${mat.nombre}`,
+          valor_resultado: precio,
+          unidad: "COP/Ton",
+          formula_codigo: "COSTO_PROCESO_SUMA_v1",
+          formula_expresion: `precio = ${precio} (precios_insumos)`,
+          parametros_entrada: { precio_directo: precio },
+          nivel_jerarquia: 2,
+        });
+      }
     }
 
     componentes.push({
       material_codigo: mat.codigo,
       material_nombre: mat.nombre,
-      pct: ln.porcentaje,
+      pct,
       precio,
       precio_calc_id: precioCalcId,
     });
@@ -189,8 +214,30 @@ export async function runRecetaProcess(
   let costo_energia: number | null = null;
   let energiaCalcId: UUID | null = null;
   if (opts.conEnergia) {
+    // Fase 1.7: override de Excel Presupuesto (Costo!N{row}/O{row}) — el budget
+    // tiene kWh/Ton y precio efectivo COP/kWh pasteados; usar esos si existen.
+    const enOver = ctx.energiaOverrideByKey?.get(`${proceso.id}|${periodo}`);
+    if (enOver) {
+      const valor = enOver.kwh_ton * enOver.precio_efectivo;
+      costo_energia = valor;
+      energiaCalcId = await writer.log({
+        calculo_tipo: "costo_energia_proceso",
+        proceso_id: proceso.id,
+        periodo,
+        concepto: `Costo Energía Eléctrica — ${proceso.nombre} (override budget)`,
+        valor_resultado: valor,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_ENERGIA_PROCESO_v1",
+        formula_expresion: `kwh_ton(${enOver.kwh_ton}) × precio_efectivo(${enOver.precio_efectivo}) = ${valor}`,
+        parametros_entrada: {
+          kwh_ton: enOver.kwh_ton, precio_efectivo: enOver.precio_efectivo,
+          fuente: "Excel Costo!N/O override",
+        },
+        nivel_jerarquia: 1,
+      });
+    }
     const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
-    if (paramsEner) {
+    if (!enOver && paramsEner) {
       const kwhMap = paramsEner.kwh_ton_proceso ?? {};
       const candidates = [
         opts.energiaKey,
@@ -246,7 +293,7 @@ export async function runRecetaProcess(
       const mat = ctx.materialesByCodigo.get(ex.material_codigo);
       if (!mat) throw new Error(`${errPrefix} ${periodo}: material ${ex.material_codigo} no en context`);
 
-      const consumoRes = ex.consumo_calculator(ctx, periodo);
+      const consumoRes = ex.consumo_calculator(ctx, periodo, proceso.id);
       const precioUnit = arrastrado.costo_por_ton;
       const costoExtra = consumoRes.valor * precioUnit;
       sumaExtra += costoExtra;

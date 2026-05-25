@@ -23,6 +23,7 @@ export class Ord16Fibrocemento implements ProcesoCalculator {
       derivedByCodigo: DERIVED_BY_CODIGO,
       conEnergia: true,
       energiaKey: "fibrocemento",
+      conCostosFijos: true,
     });
   }
 }

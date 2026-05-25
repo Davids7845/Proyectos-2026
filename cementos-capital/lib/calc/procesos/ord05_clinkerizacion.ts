@@ -23,8 +23,21 @@ const DERIVED_BY_CODIGO: Record<string, number> = {
   COMBALT:   20,
 };
 
-function buildConsumoCalc(combustible: "carbones" | "alternos") {
-  return (ctx: CalcContext, periodo: Periodo) => {
+function buildConsumoCalc(combustible: "carbones" | "alternos", material_codigo: string) {
+  return (ctx: CalcContext, periodo: Periodo, proceso_id: string) => {
+    // Fase 1.7: override de Excel Presupuesto (Costo!N63/N64) — valor pasteado
+    // por usuario, no derivado del modelo térmico. Si existe, gana sobre la fórmula.
+    const overrideKey = `${proceso_id}|${material_codigo}|${periodo}`;
+    const override = ctx.consumoOverrideByKey?.get(overrideKey);
+    if (override != null) {
+      return {
+        valor: override,
+        formula_codigo: "CONSUMO_OVERRIDE_BUDGET_v1",
+        formula_expresion: `override Excel Presupuesto (${material_codigo}): ${override} Ton/Ton`,
+        parametros_entrada: { override, fuente: "Excel Costo!N63/N64" },
+      };
+    }
+
     const en = ctx.parametrosEnergiaByPeriodo?.get(periodo);
     if (!en) throw new Error(`ORD5 ${periodo}: faltan parámetros de energía (modelo térmico)`);
     const kcal_tck = en.kcal_tck;
@@ -69,13 +82,13 @@ export class Ord05Clinkerizacion implements ProcesoCalculator {
           material_codigo: "CARBONMOL",
           productor_ord: 4,
           label: "Carbón Molido — térmico",
-          consumo_calculator: buildConsumoCalc("carbones"),
+          consumo_calculator: buildConsumoCalc("carbones", "CARBONMOL"),
         },
         {
           material_codigo: "COMBALT",
           productor_ord: 20,
           label: "Combustibles Alternos — térmico",
-          consumo_calculator: buildConsumoCalc("alternos"),
+          consumo_calculator: buildConsumoCalc("alternos", "COMBALT"),
         },
       ],
     });

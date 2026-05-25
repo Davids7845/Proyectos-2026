@@ -75,7 +75,7 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
   });
 
   // ─── ORD 3 Molienda Crudo ───────────────────────────────────────────────
-  it("ORD 3 Molienda Crudo (MP + energía) ≤ 6%", async () => {
+  it("ORD 3 Molienda Crudo (MP + energía) ≤ 2%", async () => {
     const target = setup.targets.get("Molienda Crudo")!;
     const writer = new InMemoryWriter();
     const proc = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 3);
@@ -85,7 +85,7 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     });
     const diff = Math.abs(r.costo_por_ton - target) / target;
     console.log(`[ORD3] calc=${r.costo_por_ton.toFixed(2)} target=${target.toFixed(2)} diff=${(diff*100).toFixed(2)}%`);
-    expect(diff).toBeLessThan(0.06);
+    expect(diff).toBeLessThan(0.02);
   });
 
   // ─── ORD 4 Molienda Carbón ──────────────────────────────────────────────
@@ -150,15 +150,13 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     console.log(`[ORD7]  calc=${r7.costo_por_ton.toFixed(2)}  target=${t7.toFixed(2)}  diff=${(d7*100).toFixed(2)}%`);
     console.log(`[ORD16] calc=${r16.costo_por_ton.toFixed(2)} target=${t16.toFixed(2)} diff=${(d16*100).toFixed(2)}%`);
 
-    // Fase 1.6.2: ORD 5 incluye costos fijos (Cargue Ck + Gasoil + Placas
-    // + Refractarios + Enfriador + Cargue Ck Tolva = ~7,536 COP/Ton).
-    // Residual ~6%: el Excel cascadea Carbón Molido a ~356K COP/Ton (más
-    // alto que el Total ORD 4 Presupuesto de 302K), diferencial de modelo
-    // intermedio que requiere reconciliación adicional en Fase 1.7.
-    expect(d5).toBeLessThan(0.07);
-    expect(d6).toBeLessThan(0.02);
-    // ORD 7 e Fibrocemento heredan parte del gap de cascada ORD 5.
-    expect(d7).toBeLessThan(0.05);
-    expect(d16).toBeLessThan(0.05);
+    // Fase 1.7: todos los procesos reconcilian ≤ 1% contra Excel Presupuesto.
+    // ORD 5 residual ~0.84%: el consumo de Carbón Molido usa override del Excel
+    // (N63 = 0.1315) pero el precio arrastrado de ORD 4 es ~302K vs ~356K Excel
+    // Costo Arrastrado — diferencial inherente del modelo térmico aceptado.
+    expect(d5).toBeLessThan(0.02);
+    expect(d6).toBeLessThan(0.01);
+    expect(d7).toBeLessThan(0.01);
+    expect(d16).toBeLessThan(0.01);
   });
 });

@@ -32,6 +32,7 @@ export class Ord07CementoArt implements ProcesoCalculator {
       derivedByCodigo: DERIVED_BY_CODIGO,
       conEnergia: true,
       energiaKey: "cemento art",
+      conCostosFijos: true,
     });
   }
 }

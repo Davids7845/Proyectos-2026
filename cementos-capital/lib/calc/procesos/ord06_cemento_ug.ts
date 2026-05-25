@@ -32,6 +32,7 @@ export class Ord06CementoUg implements ProcesoCalculator {
       derivedByCodigo: DERIVED_BY_CODIGO,
       conEnergia: true,
       energiaKey: "cemento ug",
+      conCostosFijos: true,
     });
   }
 }

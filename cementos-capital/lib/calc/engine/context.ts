@@ -111,6 +111,19 @@ export interface CalcContext {
   rendimientosByProcesoPeriodo?: Map<string, RendimientoCtx>;  // key: `${proceso_id}|${periodo}`
   // Fase 1.6.2: costos fijos por proceso (repuestos + servicios + regalías + otros consumibles)
   costosFijosByProcesoPeriodo?: Map<string, CostoFijoCtx[]>;   // key: `${proceso_id}|${periodo}`
+  // Fase 1.7: overrides de consumo (Ton/Ton) para cascadas — el Excel paste
+  // valores fijos en el Presupuesto que sobreescriben el modelo térmico.
+  // key: `${proceso_id}|${material_codigo}|${periodo}` → Ton material / Ton producto.
+  consumoOverrideByKey?: Map<string, number>;
+  // Fase 1.7: overrides de energía (kWh/Ton y precio efectivo COP/kWh) por
+  // proceso y periodo. Si presente, sobreescribe el cálculo derivado del Datos sheet.
+  // key: `${proceso_id}|${periodo}` → { kwh_ton, precio_efectivo }
+  energiaOverrideByKey?: Map<string, { kwh_ton: number; precio_efectivo: number }>;
+  // Fase 1.7: precio unitario por proceso+material+periodo — sobreescribe
+  // `preciosByMatPeriodo` para un componente específico de un proceso. Permite
+  // usar el precio "arrastrado" del Excel Costo!O en vez del precio Datos.
+  // key: `${proceso_id}|${material_codigo}|${periodo}` → COP/Ton
+  precioMpOverrideByKey?: Map<string, number>;
 }
 
 // ─────────────────────────────────────────────────────────────────
