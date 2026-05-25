@@ -47,3 +47,10 @@ supabase/.temp/
 /.local-excel.xlsx
 /.test-*.ts
 /.seed-*.ts
+
+# playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+.env.e2e
+.env.e2e.local
