@@ -9,6 +9,7 @@
 import type {
   CalcContext,
   Client,
+  CostoFijoCtx,
   MaterialMeta,
   ParametrosEnergiaCtx,
   Periodo,
@@ -253,6 +254,7 @@ async function loadContext(
   runId: UUID,
   formulaIdByCodigo: Map<string, UUID>
 ): Promise<CalcContext> {
+  const sb = supabase as any; // tablas con migración pendiente de regenerar tipos
   const [
     { data: procesosRaw, error: procErr },
     { data: matsRaw, error: matErr },
@@ -262,6 +264,9 @@ async function loadContext(
     { data: lineasRaw, error: lnErr },
     { data: enerRaw, error: enerErr },
     { data: rendRaw, error: rendErr },
+    { data: cfRaw,   error: cfErr },
+    { data: eoRaw,   error: eoErr },
+    { data: mpRaw,   error: mpErr },
   ] = await Promise.all([
     supabase.from("procesos").select("id, ord, material, nombre, orden_topologico").eq("activo", true),
     supabase.from("materiales").select("id, codigo, nombre, unidad_base").eq("activo", true),
@@ -269,8 +274,11 @@ async function loadContext(
     supabase.from("porcentajes_consumo").select("material_id, proveedor, periodo, porcentaje").eq("version_id", versionId),
     supabase.from("recetas").select("id, producto_id, proceso_id, periodo").eq("version_id", versionId),
     supabase.from("receta_lineas").select("receta_id, material_id, porcentaje, orden"),
-    supabase.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
+    sb.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
     supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
+    sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
+    sb.from("energia_overrides").select("proceso_id, periodo, kwh_ton, precio_efectivo").eq("version_id", versionId),
+    sb.from("mp_overrides").select("proceso_id, material_codigo, periodo, consumo_ton_ton, precio_cop_ton").eq("version_id", versionId),
   ]);
 
   if (procErr) throw new Error(`procesos: ${procErr.message}`);
@@ -281,6 +289,10 @@ async function loadContext(
   if (lnErr) throw new Error(`receta_lineas: ${lnErr.message}`);
   if (enerErr) throw new Error(`parametros_energia: ${enerErr.message}`);
   if (rendErr) throw new Error(`rendimientos: ${rendErr.message}`);
+  // override tables are optional (may not exist until migration 007 is applied)
+  if (cfErr && !cfErr.message?.includes("does not exist")) throw new Error(`costos_fijos_proceso: ${cfErr.message}`);
+  if (eoErr && !eoErr.message?.includes("does not exist")) throw new Error(`energia_overrides: ${eoErr.message}`);
+  if (mpErr && !mpErr.message?.includes("does not exist")) throw new Error(`mp_overrides: ${mpErr.message}`);
 
   const materialesById = new Map<UUID, MaterialMeta>();
   const materialesByCodigo = new Map<string, MaterialMeta>();
@@ -383,6 +395,31 @@ async function loadContext(
     });
   }
 
+  // ─── Fase 1.7: overrides de costos fijos, energía y MP ────────────────────
+  const costosFijosByProcesoPeriodo = new Map<string, CostoFijoCtx[]>();
+  for (const cf of cfRaw ?? []) {
+    const k = `${cf.proceso_id}|${cf.periodo}`;
+    const arr = costosFijosByProcesoPeriodo.get(k) ?? [];
+    arr.push({ codigo: cf.codigo, nombre: cf.nombre, costo_por_ton: Number(cf.costo_por_ton) });
+    costosFijosByProcesoPeriodo.set(k, arr);
+  }
+
+  const energiaOverrideByKey = new Map<string, { kwh_ton: number; precio_efectivo: number }>();
+  for (const eo of eoRaw ?? []) {
+    energiaOverrideByKey.set(`${eo.proceso_id}|${eo.periodo}`, {
+      kwh_ton: Number(eo.kwh_ton),
+      precio_efectivo: Number(eo.precio_efectivo),
+    });
+  }
+
+  const consumoOverrideByKey = new Map<string, number>();
+  const precioMpOverrideByKey = new Map<string, number>();
+  for (const mp of mpRaw ?? []) {
+    const k = `${mp.proceso_id}|${mp.material_codigo}|${mp.periodo}`;
+    if (mp.consumo_ton_ton != null) consumoOverrideByKey.set(k, Number(mp.consumo_ton_ton));
+    if (mp.precio_cop_ton  != null) precioMpOverrideByKey.set(k, Number(mp.precio_cop_ton));
+  }
+
   return {
     versionId,
     runId,
@@ -397,5 +434,9 @@ async function loadContext(
     costoProcesoByKey: new Map(),
     parametrosEnergiaByPeriodo,
     rendimientosByProcesoPeriodo,
+    costosFijosByProcesoPeriodo,
+    energiaOverrideByKey,
+    consumoOverrideByKey,
+    precioMpOverrideByKey,
   };
 }

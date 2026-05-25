@@ -11,6 +11,16 @@ import fs from "fs";
 import path from "path";
 import * as XLSX from "xlsx";
 import { parseExcel } from "@/lib/import/excel-importer";
+import {
+  COSTOS_FIJOS_CONFIG,
+  ENERGIA_OVERRIDE_ROWS,
+  CONSUMO_CASCADE_ROWS,
+  COSTO_MATERIAL_ROWS,
+  COSTO_COL_REAL,
+  COSTO_COL_PPTO,
+  COSTO_COL_CONSUMO,
+  COSTO_COL_PRECIO,
+} from "@/lib/import/costo-sheet-config";
 import type {
   CalcContext,
   CostoFijoCtx,
@@ -28,121 +38,21 @@ import type {
 const SEED_PATH = path.resolve(__dirname, "../../supabase/migrations/002_seed_masters.sql");
 const FIXTURE_PATH = path.resolve(__dirname, "budget_excel_real.xlsx");
 
-/**
- * Costos fijos extraídos de la hoja "Costo" del Excel.
- * Cada entrada apunta a un row absoluto + label esperado en columna F.
- * La columna P es el Presupuesto (periodo objetivo del test: 2026-01-01).
- * La columna I es el Real (mapea a 2025-09-01).
- *
- * Estos costos son repuestos, servicios industriales, regalías y otros
- * cargos fijos que el Excel incluye en el total por proceso pero que no
- * viven en la receta. En Fase 2 se reconstruirán desde `cantidad × precio
- * / producción` con materiales/items en BD; por ahora se inyectan
- * directamente para reconciliar el Total.
- */
-const COSTOS_FIJOS_EXCEL: Record<number, Array<{ row: number; codigo: string; nombre: string }>> = {
-  1: [
-    { row: 10, codigo: "BARRAS_PLAC_TRIT", nombre: "Barras y Placas" },
-    { row: 11, codigo: "MAT_DIQUE",        nombre: "Material Dique" },
-    { row: 12, codigo: "DESMANT_TRIT",     nombre: "Desmantelamiento" },
-    { row: 13, codigo: "REGALIAS",         nombre: "Regalías" },
-  ],
-  3: [
-    { row: 30, codigo: "CUERPOS_MOL_CR",   nombre: "Cuerpos Moledores (Crudo)" },
-    { row: 31, codigo: "LAMINAS_CR",       nombre: "Láminas (Crudo)" },
-    { row: 32, codigo: "ANILLOS_TAPAS_CR", nombre: "Anillos, Tapas y Separadores (Crudo)" },
-  ],
-  4: [
-    { row: 41, codigo: "DESCARGUE_FINOS_C", nombre: "Descargue Finos Carbón" },
-    { row: 42, codigo: "CARGADOR_CARBON",   nombre: "Cargador Carbón" },
-    { row: 43, codigo: "CUERPOS_MOL_C",     nombre: "Cuerpos Moledores y Láminas" },
-  ],
-  5: [
-    { row: 65, codigo: "DUCTOS_CK",        nombre: "Ductos" },
-    { row: 67, codigo: "CARGUE_CK",        nombre: "Cargue Clinker" },
-    { row: 68, codigo: "SELLADO_CK",       nombre: "Sellado" },
-    { row: 69, codigo: "ENFRIADOR_CK",     nombre: "Enfriador" },
-    { row: 70, codigo: "CARGUE_CK_TOLVA",  nombre: "Cargue Ck Tolva" },
-    { row: 71, codigo: "GASOIL_CK",        nombre: "Gasoil" },
-    { row: 72, codigo: "PLACAS_CK",        nombre: "Placas" },
-    { row: 73, codigo: "REFRACTARIOS_CK",  nombre: "Refractarios" },
-  ],
-  6: [
-    { row: 83, codigo: "CUERPOS_MOL_UG",   nombre: "Cuerpos Moledores (Cemento UG)" },
-    { row: 84, codigo: "PLACAS_SEG_UG",    nombre: "Placas y Segmentos (Cemento UG)" },
-  ],
-  7: [
-    { row: 99,  codigo: "CUERPOS_MOL_ART", nombre: "Cuerpos Moledores (Cemento ART)" },
-    { row: 100, codigo: "PLACAS_SEG_ART",  nombre: "Placas y Segmentos (Cemento ART)" },
-  ],
-  16: [
-    { row: 162, codigo: "CUERPOS_MOL_FIB", nombre: "Cuerpos Moledores (Fibrocemento)" },
-    { row: 163, codigo: "PLACAS_SEG_FIB",  nombre: "Placas y Segmentos (Fibrocemento)" },
-    { row: 165, codigo: "GASOIL_FIB",      nombre: "Gasoil (Fibrocemento)" },
-  ],
-};
-const COSTOS_FIJOS_COL_REAL = "I";      // periodo 2025-09-01
-const COSTOS_FIJOS_COL_PPTO = "P";      // periodo 2026-01-01
 const COSTOS_FIJOS_PERIODO_REAL = "2025-09-01";
 const COSTOS_FIJOS_PERIODO_PPTO = "2026-01-01";
+const PERIODO_PPTO = COSTOS_FIJOS_PERIODO_PPTO;
 
 interface CostoSheet { [addr: string]: { v?: number | string } }
 
-/**
- * Overrides de consumo y energía pasteados en el Excel Presupuesto.
- *
- * El Excel "Costo" trata las columnas N/O del Presupuesto como datos de entrada
- * (no como fórmulas) — específicamente para los componentes cascada de ORD 5
- * (Carbón Molido, Combustibles Alternos) y para la energía eléctrica de cada
- * proceso. Estos valores no se derivan del modelo térmico ni de Datos!L365, son
- * inputs del budget.
- *
- * Filas Excel "Costo" (Presupuesto, col N=consumo, O=precio unitario):
- *   - ORD 1 Trituración: N9/O9 (Energía)
- *   - ORD 3 Crudo:        N33/O33 (Energía)
- *   - ORD 4 Carbón:       N44/O44 (Energía)
- *   - ORD 5 Clinker:      N63 (Carbón Molido), N64 (Alternos), N66/O66 (Energía)
- *   - ORD 6 Cemento UG:   N81/O81 (Energía)
- *   - ORD 7 Cemento ART:  N97/O97 (Energía)
- *   - ORD 16 Fibrocemento: ?
- */
-const ENERGIA_OVERRIDE_ROWS: Record<number, number> = {
-  1: 9, 3: 33, 4: 44, 5: 66, 6: 85, 7: 101, 16: 164,
-};
-const CONSUMO_CASCADE_ROWS: Array<{ ord: number; material_codigo: string; row: number }> = [
-  { ord: 5, material_codigo: "CARBONMOL", row: 63 },
-  { ord: 5, material_codigo: "COMBALT",   row: 64 },
-];
-
-/**
- * Overrides de consumo (N col) y precio (O col) para cada material de la receta,
- * extraídos directamente del Excel Costo Presupuesto. Cubre casos donde el precio
- * "arrastrado" del Excel difiere del Datos sheet (p.ej. CALIZATRI usa precio
- * cascada interno ≠ precio mercado externo) y donde la cantidad de receta
- * difiere del consumo real presupuestado (factores de pérdida, humedad, etc.).
- */
-const COSTO_MATERIAL_ROWS: Record<number, Array<{ row: number; material_codigo: string }>> = {
-  6: [
-    { row: 78, material_codigo: "CLINKER001" },
-    { row: 79, material_codigo: "CALIZATRI" },
-    { row: 80, material_codigo: "ADIT_MOL" },
-    { row: 81, material_codigo: "PUZOLANA" },
-    { row: 82, material_codigo: "FINOS_FILT" },
-    { row: 89, material_codigo: "YESO00001" },
-  ],
-};
-const PERIODO_PPTO = "2026-01-01";
-const COL_N = "N", COL_O = "O";
-
 function extractEnergiaOverrides(
-  sheet: { [addr: string]: { v?: number | string } },
+  sheet: CostoSheet,
   procesoIdByOrd: Map<number, UUID>,
 ): Map<string, { kwh_ton: number; precio_efectivo: number }> {
   const out = new Map<string, { kwh_ton: number; precio_efectivo: number }>();
   for (const [ordStr, row] of Object.entries(ENERGIA_OVERRIDE_ROWS)) {
     const ord = Number(ordStr);
-    const kwh = sheet[`${COL_N}${row}`]?.v;
-    const precio = sheet[`${COL_O}${row}`]?.v;
+    const kwh = sheet[`${COSTO_COL_CONSUMO}${row}`]?.v;
+    const precio = sheet[`${COSTO_COL_PRECIO}${row}`]?.v;
     if (typeof kwh !== "number" || typeof precio !== "number") continue;
     const procId = procesoIdByOrd.get(ord);
     if (!procId) continue;
@@ -152,12 +62,12 @@ function extractEnergiaOverrides(
 }
 
 function extractConsumoOverrides(
-  sheet: { [addr: string]: { v?: number | string } },
+  sheet: CostoSheet,
   procesoIdByOrd: Map<number, UUID>,
 ): Map<string, number> {
   const out = new Map<string, number>();
   for (const { ord, material_codigo, row } of CONSUMO_CASCADE_ROWS) {
-    const v = sheet[`${COL_N}${row}`]?.v;
+    const v = sheet[`${COSTO_COL_CONSUMO}${row}`]?.v;
     if (typeof v !== "number") continue;
     const procId = procesoIdByOrd.get(ord);
     if (!procId) continue;
@@ -167,7 +77,7 @@ function extractConsumoOverrides(
 }
 
 function extractCostoMaterialOverrides(
-  sheet: { [addr: string]: { v?: number | string } },
+  sheet: CostoSheet,
   procesoIdByOrd: Map<number, UUID>,
 ): { consumo: Map<string, number>; precio: Map<string, number> } {
   const consumo = new Map<string, number>();
@@ -177,8 +87,8 @@ function extractCostoMaterialOverrides(
     const procId = procesoIdByOrd.get(ord);
     if (!procId) continue;
     for (const { row, material_codigo } of items) {
-      const n = sheet[`${COL_N}${row}`]?.v;
-      const o = sheet[`${COL_O}${row}`]?.v;
+      const n = sheet[`${COSTO_COL_CONSUMO}${row}`]?.v;
+      const o = sheet[`${COSTO_COL_PRECIO}${row}`]?.v;
       if (typeof n === "number") consumo.set(`${procId}|${material_codigo}|${PERIODO_PPTO}`, n);
       if (typeof o === "number") precio.set(`${procId}|${material_codigo}|${PERIODO_PPTO}`, o);
     }
@@ -193,14 +103,14 @@ function extractCostosFijos(): Map<number, Map<Periodo, CostoFijoCtx[]>> {
   const out = new Map<number, Map<Periodo, CostoFijoCtx[]>>();
   if (!sheet) return out;
 
-  for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_EXCEL)) {
+  for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_CONFIG)) {
     const ord = Number(ordStr);
     const porPeriodo = new Map<Periodo, CostoFijoCtx[]>();
     porPeriodo.set(COSTOS_FIJOS_PERIODO_REAL, []);
     porPeriodo.set(COSTOS_FIJOS_PERIODO_PPTO, []);
     for (const it of items) {
-      const real = sheet[`${COSTOS_FIJOS_COL_REAL}${it.row}`]?.v;
-      const ppto = sheet[`${COSTOS_FIJOS_COL_PPTO}${it.row}`]?.v;
+      const real = sheet[`${COSTO_COL_REAL}${it.row}`]?.v;
+      const ppto = sheet[`${COSTO_COL_PPTO}${it.row}`]?.v;
       if (typeof real === "number") {
         porPeriodo.get(COSTOS_FIJOS_PERIODO_REAL)!.push({ codigo: it.codigo, nombre: it.nombre, costo_por_ton: real });
       }

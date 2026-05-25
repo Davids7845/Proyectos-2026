@@ -115,6 +115,37 @@ export interface InventarioParsed {
   row_excel: number;
 }
 
+// ─── Tipos de la hoja "Costo" (Fase 1.7 / Fase 2) ────────────────────────────
+
+/** Costo fijo extraído de la hoja Costo (repuestos, servicios, regalías). */
+export interface CostoFijoParsed {
+  ord:           number;   // número de proceso (ORD)
+  codigo:        string;   // clave estable, ej "BARRAS_PLAC_TRIT"
+  nombre:        string;   // etiqueta humana del Excel
+  periodo:       Periodo;
+  costo_por_ton: number;   // COP/Ton
+  row_excel:     number;
+}
+
+/** Override de energía eléctrica (kWh/Ton + precio efectivo) para un proceso. */
+export interface EnergiaOverrideParsed {
+  ord:             number;
+  periodo:         Periodo;
+  kwh_ton:         number;
+  precio_efectivo: number;  // COP/kWh
+  row_excel:       number;
+}
+
+/** Override de consumo (Ton/Ton) y/o precio (COP/Ton) de un material en un proceso. */
+export interface MpOverrideParsed {
+  ord:             number;
+  material_codigo: string;
+  periodo:         Periodo;
+  consumo_ton_ton: number | null;
+  precio_cop_ton:  number | null;
+  row_excel:       number;
+}
+
 // ─── Errores / Warnings ───────────────────────────────────────────────────────
 
 export type SeccionImporter =
@@ -129,7 +160,10 @@ export type SeccionImporter =
   | "energia"
   | "combustibles"
   | "energia_termica"
-  | "inventarios";
+  | "inventarios"
+  | "costos_fijos"
+  | "energia_overrides"
+  | "mp_overrides";
 
 export interface ImportError {
   seccion: SeccionImporter | "general";
@@ -158,6 +192,10 @@ export interface ParsedExcel {
   combustibles_pci: CombustiblePciParsed[];
   energia_termica: EnergiaTermicaParsed[];
   inventarios: InventarioParsed[];
+  // Fase 1.7: hoja "Costo"
+  costos_fijos: CostoFijoParsed[];
+  energia_overrides: EnergiaOverrideParsed[];
+  mp_overrides: MpOverrideParsed[];
   errors: ImportError[];
   warnings: ImportWarning[];
 }
@@ -174,6 +212,10 @@ export interface LoadReport {
   rendimientos_insertados: number;
   parametros_energia_insertados: number;
   inventarios_insertados: number;
+  // Fase 1.7
+  costos_fijos_insertados: number;
+  energia_overrides_insertados: number;
+  mp_overrides_insertados: number;
   materiales_no_encontrados: string[];
   procesos_no_encontrados: string[];
   errores: ImportError[];

@@ -61,6 +61,9 @@ export async function loadParsedExcel(
     rendimientos_insertados: 0,
     parametros_energia_insertados: 0,
     inventarios_insertados: 0,
+    costos_fijos_insertados: 0,
+    energia_overrides_insertados: 0,
+    mp_overrides_insertados: 0,
     materiales_no_encontrados: [],
     procesos_no_encontrados: [],
     errores: [...parsed.errors],
@@ -309,6 +312,14 @@ export async function loadParsedExcel(
       kcal_tck_total: number | null;
       pci_ponderado_horno: number | null;
       composicion_horno: Record<string, number> | null;
+      // Migración 006: modelo térmico horno
+      kcal_tck: number | null;
+      pct_energia_carbones: number | null;
+      pct_energia_alternos: number | null;
+      pct_energia_diesel: number | null;
+      pci_ponderado_carbones: number | null;
+      pci_ponderado_alternos: number | null;
+      pci_ponderado_diesel: number | null;
     };
     const byPeriodo = new Map<string, EnergiaRow>();
     const ensure = (p: string): EnergiaRow => {
@@ -319,6 +330,9 @@ export async function loadParsedExcel(
         precio_contrato: null, precio_restricciones: null, cargos_fijos: null,
         kwh_ton_proceso: null, pci_combustibles: null,
         kcal_tck_total: null, pci_ponderado_horno: null, composicion_horno: null,
+        kcal_tck: null,
+        pct_energia_carbones: null, pct_energia_alternos: null, pct_energia_diesel: null,
+        pci_ponderado_carbones: null, pci_ponderado_alternos: null, pci_ponderado_diesel: null,
       };
       byPeriodo.set(p, nuevo);
       return nuevo;
@@ -337,20 +351,68 @@ export async function loadParsedExcel(
       const row = ensure(c.periodo);
       row.pci_combustibles = { ...(row.pci_combustibles ?? {}), [c.proveedor]: c.pci };
     }
+
+    // Buffer para reconstruir PCIs ponderados (migración 006)
+    const termRaw: Record<string, {
+      masa_mixto?: number; masa_bitumin?: number; masa_fino?: number;
+      pct_cdr?: number; pct_tdf?: number;
+      pci_mixto?: number; pci_bitumin?: number; pci_fino?: number;
+      pci_cdr?: number; pci_tdf?: number; pci_diesel?: number;
+      pct_carbones?: number; pct_alternos?: number; pct_diesel?: number;
+      kcal_tck?: number;
+    }> = {};
+    const bufFor = (p: string) => (termRaw[p] ??= {});
+
     for (const t of parsed.energia_termica) {
       const row = ensure(t.periodo);
       if (t.campo === "kcal_tck_total") row.kcal_tck_total = t.valor;
       else if (t.campo === "composicion" && t.componente) {
         row.composicion_horno = { ...(row.composicion_horno ?? {}), [t.componente]: t.valor };
       }
+      const comp = (t.componente ?? "").toLowerCase();
+      const buf = bufFor(t.periodo);
+      if (/prueba pci/.test(comp))                                            buf.kcal_tck = t.valor;
+      else if (/^energía carbones|^energia carbones/.test(comp))              buf.pct_carbones = t.valor;
+      else if (/^energía alternos|^energia alternos/.test(comp))              buf.pct_alternos = t.valor;
+      else if (/^energía diesel|^energia diesel/.test(comp))                  buf.pct_diesel = t.valor;
+      else if (/carbón mixto seco \(masa\)|carbon mixto seco \(masa\)/.test(comp))            buf.masa_mixto = t.valor;
+      else if (/carbón bituminoso seco \(masa\)|carbon bituminoso seco \(masa\)/.test(comp))  buf.masa_bitumin = t.valor;
+      else if (/carbón fino seco \(masa\)|carbon fino seco \(masa\)/.test(comp))              buf.masa_fino = t.valor;
+      else if (/^cdr seco/.test(comp))                                        buf.pct_cdr = t.valor;
+      else if (/^tdf seco/.test(comp))                                        buf.pct_tdf = t.valor;
+      else if (/pci ponderado carbón mixto|pci ponderado carbon mixto/.test(comp))           buf.pci_mixto = t.valor;
+      else if (/pci ponderado carbón bituminoso|pci ponderado carbon bituminoso/.test(comp)) buf.pci_bitumin = t.valor;
+      else if (/pci ponderado carbón fino|pci ponderado carbon fino/.test(comp))             buf.pci_fino = t.valor;
+      else if (/pci ponderado cdr/.test(comp))                                buf.pci_cdr = t.valor;
+      else if (/pci ponderado tdf/.test(comp))                                buf.pci_tdf = t.valor;
+      else if (/pci ponderado diesel/.test(comp))                             buf.pci_diesel = t.valor;
+    }
+
+    // Volcar buffer → campos migración 006
+    for (const [per, buf] of Object.entries(termRaw)) {
+      const row = ensure(per);
+      if (buf.kcal_tck != null)     row.kcal_tck = buf.kcal_tck;
+      if (buf.pct_carbones != null) row.pct_energia_carbones = buf.pct_carbones;
+      if (buf.pct_alternos != null) row.pct_energia_alternos = buf.pct_alternos;
+      if (buf.pct_diesel != null)   row.pct_energia_diesel = buf.pct_diesel;
+      if (buf.pci_diesel != null)   row.pci_ponderado_diesel = buf.pci_diesel;
+      const partesC: Array<[number | undefined, number | undefined]> = [
+        [buf.masa_mixto, buf.pci_mixto], [buf.masa_bitumin, buf.pci_bitumin], [buf.masa_fino, buf.pci_fino],
+      ];
+      let sumC = 0; let validC = false;
+      for (const [m, p] of partesC) if (m != null && p != null) { sumC += m * p; validC = true; }
+      if (validC) row.pci_ponderado_carbones = sumC;
+      if (buf.pct_cdr != null && buf.pci_cdr != null && buf.pct_tdf != null && buf.pci_tdf != null) {
+        row.pci_ponderado_alternos = buf.pct_cdr * buf.pci_cdr + buf.pct_tdf * buf.pci_tdf;
+      }
     }
 
     const rows = Array.from(byPeriodo.values());
     if (rows.length > 0) {
-      await supabase.from("parametros_energia").delete().eq("version_id", versionId);
+      await (supabase as any).from("parametros_energia").delete().eq("version_id", versionId);
       for (let i = 0; i < rows.length; i += 500) {
         const chunk = rows.slice(i, i + 500);
-        const { error } = await supabase.from("parametros_energia").insert(chunk);
+        const { error } = await (supabase as any).from("parametros_energia").insert(chunk);
         if (error) { report.errores.push({ seccion: "energia", row_excel: null, mensaje: error.message }); break; }
         report.parametros_energia_insertados += chunk.length;
       }
@@ -471,6 +533,93 @@ export async function loadParsedExcel(
       const { error } = await supabase.from("inventarios_finales").insert(chunk);
       if (error) { report.errores.push({ seccion: "inventarios", row_excel: null, mensaje: error.message }); break; }
       report.inventarios_insertados += chunk.length;
+    }
+  }
+
+  // ──────────────── Overrides hoja Costo (Fase 1.7) ────────────────
+  const hasOverrides =
+    parsed.costos_fijos.length > 0 ||
+    parsed.energia_overrides.length > 0 ||
+    parsed.mp_overrides.length > 0;
+
+  if (hasOverrides) {
+    // Cargar mapa ord → proceso_id
+    const { data: procsData } = await supabase.from("procesos").select("id, ord").eq("activo", true);
+    const procesoIdByOrd = new Map<number, string>();
+    for (const p of procsData ?? []) procesoIdByOrd.set(p.ord, p.id);
+
+    // costos_fijos_proceso
+    if (parsed.costos_fijos.length > 0) {
+      await (supabase as any).from("costos_fijos_proceso").delete().eq("version_id", versionId);
+      const rows = parsed.costos_fijos
+        .map(cf => {
+          const procId = procesoIdByOrd.get(cf.ord);
+          if (!procId) { procesosNoEncontrados.add(`ORD ${cf.ord}`); return null; }
+          return {
+            version_id: versionId,
+            proceso_id: procId,
+            periodo: cf.periodo,
+            codigo: cf.codigo,
+            nombre: cf.nombre,
+            costo_por_ton: cf.costo_por_ton,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const { error } = await (supabase as any).from("costos_fijos_proceso").insert(chunk);
+        if (error) { report.errores.push({ seccion: "costos_fijos", row_excel: null, mensaje: error.message }); break; }
+        report.costos_fijos_insertados += chunk.length;
+      }
+    }
+
+    // energia_overrides
+    if (parsed.energia_overrides.length > 0) {
+      await (supabase as any).from("energia_overrides").delete().eq("version_id", versionId);
+      const rows = parsed.energia_overrides
+        .map(eo => {
+          const procId = procesoIdByOrd.get(eo.ord);
+          if (!procId) { procesosNoEncontrados.add(`ORD ${eo.ord}`); return null; }
+          return {
+            version_id: versionId,
+            proceso_id: procId,
+            periodo: eo.periodo,
+            kwh_ton: eo.kwh_ton,
+            precio_efectivo: eo.precio_efectivo,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const { error } = await (supabase as any).from("energia_overrides").insert(chunk);
+        if (error) { report.errores.push({ seccion: "energia_overrides", row_excel: null, mensaje: error.message }); break; }
+        report.energia_overrides_insertados += chunk.length;
+      }
+    }
+
+    // mp_overrides
+    if (parsed.mp_overrides.length > 0) {
+      await (supabase as any).from("mp_overrides").delete().eq("version_id", versionId);
+      const rows = parsed.mp_overrides
+        .map(mp => {
+          const procId = procesoIdByOrd.get(mp.ord);
+          if (!procId) { procesosNoEncontrados.add(`ORD ${mp.ord}`); return null; }
+          return {
+            version_id: versionId,
+            proceso_id: procId,
+            material_codigo: mp.material_codigo,
+            periodo: mp.periodo,
+            consumo_ton_ton: mp.consumo_ton_ton,
+            precio_cop_ton: mp.precio_cop_ton,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const { error } = await (supabase as any).from("mp_overrides").insert(chunk);
+        if (error) { report.errores.push({ seccion: "mp_overrides", row_excel: null, mensaje: error.message }); break; }
+        report.mp_overrides_insertados += chunk.length;
+      }
     }
   }
 

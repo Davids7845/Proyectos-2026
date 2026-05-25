@@ -13,10 +13,22 @@ import type {
   CombustiblePciParsed,
   EnergiaTermicaParsed,
   InventarioParsed,
+  CostoFijoParsed,
+  EnergiaOverrideParsed,
+  MpOverrideParsed,
   ImportError,
   ImportWarning,
   Periodo,
 } from "./types";
+import {
+  COSTOS_FIJOS_CONFIG,
+  ENERGIA_OVERRIDE_ROWS,
+  CONSUMO_CASCADE_ROWS,
+  COSTO_MATERIAL_ROWS,
+  COSTO_COL_PPTO,
+  COSTO_COL_CONSUMO,
+  COSTO_COL_PRECIO,
+} from "./costo-sheet-config";
 
 // ─────────────────────────────────────────────────────────────────
 // Layout de la hoja "Datos" (Nueva_Plantilla_Ppto_CV_V2.xlsx)
@@ -132,6 +144,9 @@ function emptyParsed(errors: ImportError[], warnings: ImportWarning[]): ParsedEx
     combustibles_pci: [],
     energia_termica: [],
     inventarios: [],
+    costos_fijos: [],
+    energia_overrides: [],
+    mp_overrides: [],
     errors,
     warnings,
   };
@@ -608,6 +623,20 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     }
   }
 
+  // ─── Hoja "Costo": costos fijos + overrides de energía y MP ───
+  let costos_fijos: CostoFijoParsed[] = [];
+  let energia_overrides: EnergiaOverrideParsed[] = [];
+  let mp_overrides: MpOverrideParsed[] = [];
+  const costoSheetName = wb.SheetNames.find(n => n.toLowerCase() === "costo");
+  if (costoSheetName && periodos.length > 0) {
+    const periodoPpto = derivePeriodoPpto(periodos);
+    const cs = wb.Sheets[costoSheetName] as Record<string, { v?: unknown }>;
+    const parsed = parseCostoSheetCells(cs, periodoPpto);
+    costos_fijos = parsed.costos_fijos;
+    energia_overrides = parsed.energia_overrides;
+    mp_overrides = parsed.mp_overrides;
+  }
+
   return {
     periodos,
     precios,
@@ -622,7 +651,88 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
     combustibles_pci,
     energia_termica,
     inventarios,
+    costos_fijos,
+    energia_overrides,
+    mp_overrides,
     errors,
     warnings,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Helpers para hoja "Costo"
+// ─────────────────────────────────────────────────────────────────
+
+/** Deriva el periodo presupuesto (año max, enero) del array de periodos del Datos. */
+function derivePeriodoPpto(periodos: Periodo[]): Periodo {
+  const years = periodos.map(p => Number(p.slice(0, 4)));
+  const maxY = Math.max(...years);
+  return `${maxY}-01-01`;
+}
+
+type CostoSheet = Record<string, { v?: unknown }>;
+
+function getCostoCell(cs: CostoSheet, col: string, row: number): unknown {
+  return cs[`${col}${row}`]?.v ?? null;
+}
+
+function toNum(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function parseCostoSheetCells(
+  cs: CostoSheet,
+  periodoPpto: Periodo,
+): { costos_fijos: CostoFijoParsed[]; energia_overrides: EnergiaOverrideParsed[]; mp_overrides: MpOverrideParsed[] } {
+  const costos_fijos: CostoFijoParsed[] = [];
+  const energia_overrides: EnergiaOverrideParsed[] = [];
+  const mp_overrides: MpOverrideParsed[] = [];
+
+  // Costos fijos (col P = costo_por_ton presupuesto)
+  for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_CONFIG)) {
+    const ord = Number(ordStr);
+    for (const it of items) {
+      const v = toNum(getCostoCell(cs, COSTO_COL_PPTO, it.row));
+      if (v != null) {
+        costos_fijos.push({ ord, codigo: it.codigo, nombre: it.nombre, periodo: periodoPpto, costo_por_ton: v, row_excel: it.row });
+      }
+    }
+  }
+
+  // Overrides de energía (col N = kWh/Ton, col O = precio efectivo)
+  for (const [ordStr, row] of Object.entries(ENERGIA_OVERRIDE_ROWS)) {
+    const ord = Number(ordStr);
+    const kwh = toNum(getCostoCell(cs, COSTO_COL_CONSUMO, row));
+    const precio = toNum(getCostoCell(cs, COSTO_COL_PRECIO, row));
+    if (kwh != null && precio != null) {
+      energia_overrides.push({ ord, periodo: periodoPpto, kwh_ton: kwh, precio_efectivo: precio, row_excel: row });
+    }
+  }
+
+  // Overrides consumo cascada (ORD 5: CARBONMOL, COMBALT)
+  for (const { ord, material_codigo, row } of CONSUMO_CASCADE_ROWS) {
+    const consumo = toNum(getCostoCell(cs, COSTO_COL_CONSUMO, row));
+    if (consumo != null) {
+      mp_overrides.push({ ord, material_codigo, periodo: periodoPpto, consumo_ton_ton: consumo, precio_cop_ton: null, row_excel: row });
+    }
+  }
+
+  // Overrides MP receta (consumo N + precio O)
+  for (const [ordStr, items] of Object.entries(COSTO_MATERIAL_ROWS)) {
+    const ord = Number(ordStr);
+    for (const { row, material_codigo } of items) {
+      const consumo = toNum(getCostoCell(cs, COSTO_COL_CONSUMO, row));
+      const precio = toNum(getCostoCell(cs, COSTO_COL_PRECIO, row));
+      if (consumo != null || precio != null) {
+        mp_overrides.push({ ord, material_codigo, periodo: periodoPpto, consumo_ton_ton: consumo, precio_cop_ton: precio, row_excel: row });
+      }
+    }
+  }
+
+  return { costos_fijos, energia_overrides, mp_overrides };
 }
