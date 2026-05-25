@@ -28,6 +28,7 @@ export class Ord04MoliendaCarbon implements ProcesoCalculator {
       derivedByCodigo: {},
       conEnergia: true,
       energiaKey: "molienda de carbón",
+      conCostosFijos: true,
     });
   }
 }

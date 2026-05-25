@@ -9,9 +9,11 @@
 
 import fs from "fs";
 import path from "path";
+import * as XLSX from "xlsx";
 import { parseExcel } from "@/lib/import/excel-importer";
 import type {
   CalcContext,
+  CostoFijoCtx,
   MaterialMeta,
   ParametrosEnergiaCtx,
   PctConsumoCtx,
@@ -24,6 +26,76 @@ import type {
 } from "@/lib/calc/engine/context";
 
 const SEED_PATH = path.resolve(__dirname, "../../supabase/migrations/002_seed_masters.sql");
+const FIXTURE_PATH = path.resolve(__dirname, "budget_excel_real.xlsx");
+
+/**
+ * Costos fijos extraídos de la hoja "Costo" del Excel.
+ * Cada entrada apunta a un row absoluto + label esperado en columna F.
+ * La columna P es el Presupuesto (periodo objetivo del test: 2026-01-01).
+ * La columna I es el Real (mapea a 2025-09-01).
+ *
+ * Estos costos son repuestos, servicios industriales, regalías y otros
+ * cargos fijos que el Excel incluye en el total por proceso pero que no
+ * viven en la receta. En Fase 2 se reconstruirán desde `cantidad × precio
+ * / producción` con materiales/items en BD; por ahora se inyectan
+ * directamente para reconciliar el Total.
+ */
+const COSTOS_FIJOS_EXCEL: Record<number, Array<{ row: number; codigo: string; nombre: string }>> = {
+  1: [
+    { row: 10, codigo: "BARRAS_PLAC_TRIT", nombre: "Barras y Placas" },
+    { row: 11, codigo: "MAT_DIQUE",        nombre: "Material Dique" },
+    { row: 12, codigo: "DESMANT_TRIT",     nombre: "Desmantelamiento" },
+    { row: 13, codigo: "REGALIAS",         nombre: "Regalías" },
+  ],
+  4: [
+    { row: 41, codigo: "DESCARGUE_FINOS_C", nombre: "Descargue Finos Carbón" },
+    { row: 42, codigo: "CARGADOR_CARBON",   nombre: "Cargador Carbón" },
+    { row: 43, codigo: "CUERPOS_MOL_C",     nombre: "Cuerpos Moledores y Láminas" },
+  ],
+  5: [
+    { row: 65, codigo: "DUCTOS_CK",        nombre: "Ductos" },
+    { row: 67, codigo: "CARGUE_CK",        nombre: "Cargue Clinker" },
+    { row: 68, codigo: "SELLADO_CK",       nombre: "Sellado" },
+    { row: 69, codigo: "ENFRIADOR_CK",     nombre: "Enfriador" },
+    { row: 70, codigo: "CARGUE_CK_TOLVA",  nombre: "Cargue Ck Tolva" },
+    { row: 71, codigo: "GASOIL_CK",        nombre: "Gasoil" },
+    { row: 72, codigo: "PLACAS_CK",        nombre: "Placas" },
+    { row: 73, codigo: "REFRACTARIOS_CK",  nombre: "Refractarios" },
+  ],
+};
+const COSTOS_FIJOS_COL_REAL = "I";      // periodo 2025-09-01
+const COSTOS_FIJOS_COL_PPTO = "P";      // periodo 2026-01-01
+const COSTOS_FIJOS_PERIODO_REAL = "2025-09-01";
+const COSTOS_FIJOS_PERIODO_PPTO = "2026-01-01";
+
+interface CostoSheet { [addr: string]: { v?: number | string } }
+
+function extractCostosFijos(): Map<number, Map<Periodo, CostoFijoCtx[]>> {
+  const buf = fs.readFileSync(FIXTURE_PATH);
+  const wb = XLSX.read(buf, { type: "buffer", cellFormula: false });
+  const sheet = wb.Sheets["Costo"] as CostoSheet | undefined;
+  const out = new Map<number, Map<Periodo, CostoFijoCtx[]>>();
+  if (!sheet) return out;
+
+  for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_EXCEL)) {
+    const ord = Number(ordStr);
+    const porPeriodo = new Map<Periodo, CostoFijoCtx[]>();
+    porPeriodo.set(COSTOS_FIJOS_PERIODO_REAL, []);
+    porPeriodo.set(COSTOS_FIJOS_PERIODO_PPTO, []);
+    for (const it of items) {
+      const real = sheet[`${COSTOS_FIJOS_COL_REAL}${it.row}`]?.v;
+      const ppto = sheet[`${COSTOS_FIJOS_COL_PPTO}${it.row}`]?.v;
+      if (typeof real === "number") {
+        porPeriodo.get(COSTOS_FIJOS_PERIODO_REAL)!.push({ codigo: it.codigo, nombre: it.nombre, costo_por_ton: real });
+      }
+      if (typeof ppto === "number") {
+        porPeriodo.get(COSTOS_FIJOS_PERIODO_PPTO)!.push({ codigo: it.codigo, nombre: it.nombre, costo_por_ton: ppto });
+      }
+    }
+    out.set(ord, porPeriodo);
+  }
+  return out;
+}
 
 function norm(s: string): string {
   return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
@@ -455,6 +527,18 @@ export function buildContextFromExcel(
     rendimientosByProcesoPeriodo.set(k, cur);
   }
 
+  // ─── Costos fijos por proceso (Fase 1.6.2) ───
+  const fijosByOrd = extractCostosFijos();
+  const costosFijosByProcesoPeriodo = new Map<string, CostoFijoCtx[]>();
+  for (const [ord, porPeriodo] of Array.from(fijosByOrd.entries())) {
+    const procId = seed.procesoIdByOrd.get(ord);
+    if (!procId) continue;
+    for (const [per, items] of Array.from(porPeriodo.entries())) {
+      if (items.length === 0) continue;
+      costosFijosByProcesoPeriodo.set(`${procId}|${per}`, items);
+    }
+  }
+
   // ─── Periodos a usar ───
   const allPeriodos = parsed.periodos;
   const periodos = opts.periodos ?? allPeriodos;
@@ -481,6 +565,7 @@ export function buildContextFromExcel(
     costoProcesoByKey: new Map(),
     parametrosEnergiaByPeriodo,
     rendimientosByProcesoPeriodo,
+    costosFijosByProcesoPeriodo,
   };
 
   return {

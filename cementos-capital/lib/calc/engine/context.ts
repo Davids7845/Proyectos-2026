@@ -69,6 +69,18 @@ export interface ParametrosEnergiaCtx {
   pci_ponderado_diesel:    number | null;  // Kcal/kg Diesel (fila 412)
 }
 
+/**
+ * Costo fijo / repuestos / servicios industriales por proceso y periodo.
+ * Cada item ya viene normalizado a COP/Ton (calculado fuera del motor en Fase 1.6:
+ * los valores se extraen directamente del Excel "Costo"; en Fase 2 se reconstruirán
+ * desde `cantidad × precio / producción` con su propia trazabilidad).
+ */
+export interface CostoFijoCtx {
+  codigo:        string;  // identificador estable, p.ej. "BARRAS_PLAC_TRIT"
+  nombre:        string;  // etiqueta humana (Excel)
+  costo_por_ton: number;  // COP/Ton
+}
+
 export interface RendimientoCtx {
   proceso_id: UUID;
   periodo: Periodo;
@@ -97,6 +109,8 @@ export interface CalcContext {
   // Fase 1.5: contexto energético y de rendimiento (opcional para compat con tests)
   parametrosEnergiaByPeriodo?: Map<Periodo, ParametrosEnergiaCtx>;
   rendimientosByProcesoPeriodo?: Map<string, RendimientoCtx>;  // key: `${proceso_id}|${periodo}`
+  // Fase 1.6.2: costos fijos por proceso (repuestos + servicios + regalías + otros consumibles)
+  costosFijosByProcesoPeriodo?: Map<string, CostoFijoCtx[]>;   // key: `${proceso_id}|${periodo}`
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -59,11 +59,9 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
   });
 
   // ─── ORD 1 Trituración ──────────────────────────────────────────────────
-  // Gap conocido: la calculadora ORD 1 sólo computa MP (Caliza + Arcilla
-  // ponderada). El Excel también incluye Barras y Placas, Material Dique,
-  // Desmantelamiento, Regalías — esos componentes son ~5% del total y se
-  // implementarán cuando ORD 1 acepte costos extras (Fase 2).
-  it("ORD 1 Trituración (MP only) ≤ 5%", async () => {
+  // Fase 1.6.2: ORD 1 ahora suma costos fijos (Barras y Placas, Material
+  // Dique, Desmantelamiento, Regalías) extraídos del Excel. Cierre ≤ 1%.
+  it("ORD 1 Trituración (MP + fijos) ≤ 1%", async () => {
     const target = setup.targets.get("Trituración")!;
     const writer = new InMemoryWriter();
     const proc = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 1);
@@ -73,7 +71,7 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     });
     const diff = Math.abs(r.costo_por_ton - target) / target;
     console.log(`[ORD1] calc=${r.costo_por_ton.toFixed(2)} target=${target.toFixed(2)} diff=${(diff*100).toFixed(2)}%`);
-    expect(diff).toBeLessThan(0.05);
+    expect(diff).toBeLessThan(0.01);
   });
 
   // ─── ORD 3 Molienda Crudo ───────────────────────────────────────────────
@@ -91,12 +89,10 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
   });
 
   // ─── ORD 4 Molienda Carbón ──────────────────────────────────────────────
-  // Tolerancia ≤ 5%: el MP reconcilia ≤ 0.5% con PRICE_OVERRIDE de CARBITUMI
-  // (absorbe factor de pérdida 1.094344). Gap residual ~3.6% por servicios
-  // fijos faltantes (Descargue Finos 2,078 + Cargador 7,722 + Cuerpos
-  // Moledores 1,035 = 10,835 COP/Ton) marcados para prompt 2, + ~0.7%
-  // por diferencia en precio energía.
-  it("ORD 4 Molienda Carbón (MP + energía) ≤ 5%", async () => {
+  // Fase 1.6.2: ahora suma MP + energía + costos fijos (Descargue Finos +
+  // Cargador + Cuerpos Moledores y Láminas). Residual ≤ 1% por minutia
+  // de precio efectivo de energía Presupuesto vs Real.
+  it("ORD 4 Molienda Carbón (MP + energía + fijos) ≤ 1%", async () => {
     const target = setup.targets.get("Molienda Carbón")!;
     const writer = new InMemoryWriter();
     const proc = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 4);
@@ -106,7 +102,7 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     });
     const diff = Math.abs(r.costo_por_ton - target) / target;
     console.log(`[ORD4] calc=${r.costo_por_ton.toFixed(2)} target=${target.toFixed(2)} diff=${(diff*100).toFixed(2)}%`);
-    expect(diff).toBeLessThan(0.05);
+    expect(diff).toBeLessThan(0.01);
   });
 
   // ─── Cascada ORD 5 → 6/7/16 con modelo térmico Fase 1.6 ───────────────
@@ -154,12 +150,15 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     console.log(`[ORD7]  calc=${r7.costo_por_ton.toFixed(2)}  target=${t7.toFixed(2)}  diff=${(d7*100).toFixed(2)}%`);
     console.log(`[ORD16] calc=${r16.costo_por_ton.toFixed(2)} target=${t16.toFixed(2)} diff=${(d16*100).toFixed(2)}%`);
 
-    // ORD 5 sin repuestos (Placas+Refractarios+Cargue Ck+Gasoil = 7,481
-    // COP/Ton = 6.6%) — pendiente prompt 2; tolerancia ≤ 15%.
-    expect(d5).toBeLessThan(0.15);
-    expect(d6).toBeLessThan(0.05);
-    // ORD 7 hereda el gap parcial de cascada + variaciones de receta; ≤ 11%.
-    expect(d7).toBeLessThan(0.11);
-    expect(d16).toBeLessThan(0.10);
+    // Fase 1.6.2: ORD 5 incluye costos fijos (Cargue Ck + Gasoil + Placas
+    // + Refractarios + Enfriador + Cargue Ck Tolva = ~7,536 COP/Ton).
+    // Residual ~6%: el Excel cascadea Carbón Molido a ~356K COP/Ton (más
+    // alto que el Total ORD 4 Presupuesto de 302K), diferencial de modelo
+    // intermedio que requiere reconciliación adicional en Fase 1.7.
+    expect(d5).toBeLessThan(0.07);
+    expect(d6).toBeLessThan(0.02);
+    // ORD 7 e Fibrocemento heredan parte del gap de cascada ORD 5.
+    expect(d7).toBeLessThan(0.05);
+    expect(d16).toBeLessThan(0.05);
   });
 });

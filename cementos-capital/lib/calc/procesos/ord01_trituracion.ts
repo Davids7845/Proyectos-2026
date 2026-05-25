@@ -23,6 +23,7 @@ import type {
   ProcesoResult,
   CalcWriter,
   Periodo,
+  UUID,
 } from "@/lib/calc/engine/context";
 
 const CODIGO_CALIZA   = "CALTLVTRIT";
@@ -134,9 +135,40 @@ export class Ord01Trituracion implements ProcesoCalculator {
       rol_dependencias: { [f1Id]: "precio_caliza_martillo" },
     });
 
-    // ─── 4) Costo total proceso (v1: sólo MP; combustible/energía/repuestos se suman en futuras iteraciones) ────
-    const costo_total = f2.valor;
-    const costo_por_ton = f2.valor;
+    // ─── 4) Costos fijos (Fase 1.6.2): Barras y Placas, Material Dique, Regalías, etc.
+    let costo_servicios: number | null = null;
+    const fijosCalcIds: UUID[] = [];
+    const fijosRolDeps: Record<string, string> = {};
+    const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
+    if (items.length > 0) {
+      let suma = 0;
+      for (const it of items) {
+        if (it.costo_por_ton === 0) continue;
+        suma += it.costo_por_ton;
+        const id = await writer.log({
+          calculo_tipo: "costo_fijo_proceso",
+          proceso_id: proceso.id,
+          periodo,
+          concepto: `${it.nombre} (costo fijo)`,
+          valor_resultado: it.costo_por_ton,
+          unidad: "COP/Ton",
+          formula_codigo: "COSTO_PROCESO_SUMA_v1",
+          formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
+          parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
+          nivel_jerarquia: 1,
+        });
+        fijosCalcIds.push(id);
+        fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
+      }
+      if (suma > 0) costo_servicios = suma;
+    }
+
+    // ─── 5) Costo total proceso ────────────────────────────────────────
+    const costo_total = f2.valor + (costo_servicios ?? 0);
+    const costo_por_ton = costo_total;
+
+    const dependeDeTotal: UUID[] = [f2Id, ...fijosCalcIds];
+    const rolDepsTotal: Record<string, string> = { [f2Id]: "costo_mp", ...fijosRolDeps };
 
     const totalId = await writer.log({
       calculo_tipo: "costo_proceso_total",
@@ -146,11 +178,14 @@ export class Ord01Trituracion implements ProcesoCalculator {
       valor_resultado: costo_total,
       unidad: "COP/Ton",
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
-      formula_expresion: `costo_mp=${f2.valor} → total=${costo_total}`,
-      parametros_entrada: { costo_mp: f2.valor },
+      formula_expresion:
+        `costo_mp=${f2.valor}` +
+        (costo_servicios != null ? ` + costo_servicios=${costo_servicios}` : "") +
+        ` → total=${costo_total}`,
+      parametros_entrada: { costo_mp: f2.valor, costo_servicios },
       nivel_jerarquia: 0,
-      depende_de: [f2Id],
-      rol_dependencias: { [f2Id]: "costo_mp" },
+      depende_de: dependeDeTotal,
+      rol_dependencias: rolDepsTotal,
     });
 
     return {
@@ -160,7 +195,7 @@ export class Ord01Trituracion implements ProcesoCalculator {
       costo_combustible:   null,
       costo_energia:       null,
       costo_repuestos:     null,
-      costo_servicios:     null,
+      costo_servicios,
       costo_total,
       costo_por_ton,
       costo_recibido_arrastre:  0,

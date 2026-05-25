@@ -51,6 +51,12 @@ export interface RunRecetaOpts {
    * Alternos cuyo consumo se calcula a partir del modelo térmico.
    * Cada item produce un calculo derivado adicional que suma al costo_total.
    */
+  /**
+   * Si true, suma los costos fijos definidos en `ctx.costosFijosByProcesoPeriodo`
+   * (repuestos, servicios industriales, regalías, etc.). Cada item se loguea
+   * individualmente y la suma se acumula en `costo_servicios`.
+   */
+  conCostosFijos?: boolean;
   extraDerivedComponents?: Array<{
     /** Código del material producto del proceso productor (p.ej. "CARBONMOL"). */
     material_codigo: string;
@@ -287,7 +293,40 @@ export async function runRecetaProcess(
     void paramsEner;
   }
 
-  const sumaExtras = (costo_energia ?? 0) + (costo_combustible ?? 0);
+  // ─── Costos fijos (Fase 1.6.2): repuestos + servicios + regalías ─────────
+  // Cada item de `ctx.costosFijosByProcesoPeriodo` se loguea y suma al total.
+  // La suma se reporta en `costo_servicios` (bucket genérico Fase 1; en Fase 2
+  // se desglosará en repuestos vs servicios vs otros con sus propios formuladores).
+  let costo_servicios: number | null = null;
+  const fijosCalcIds: UUID[] = [];
+  const fijosRolDeps: Record<string, string> = {};
+  if (opts.conCostosFijos) {
+    const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
+    if (items.length > 0) {
+      let suma = 0;
+      for (const it of items) {
+        if (it.costo_por_ton === 0) continue;
+        suma += it.costo_por_ton;
+        const id = await writer.log({
+          calculo_tipo: "costo_fijo_proceso",
+          proceso_id: proceso.id,
+          periodo,
+          concepto: `${it.nombre} (costo fijo)`,
+          valor_resultado: it.costo_por_ton,
+          unidad: "COP/Ton",
+          formula_codigo: "COSTO_PROCESO_SUMA_v1",
+          formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
+          parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
+          nivel_jerarquia: 1,
+        });
+        fijosCalcIds.push(id);
+        fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
+      }
+      if (suma > 0) costo_servicios = suma;
+    }
+  }
+
+  const sumaExtras = (costo_energia ?? 0) + (costo_combustible ?? 0) + (costo_servicios ?? 0);
   const costo_total = mpResult.valor + sumaExtras;
 
   const dependeDe: UUID[] = [mpId];
@@ -296,6 +335,10 @@ export async function runRecetaProcess(
   for (const ecid of extraCalcIds) {
     dependeDe.push(ecid);
     rolDepsTotal[ecid] = extraRolDeps[ecid];
+  }
+  for (const fid of fijosCalcIds) {
+    dependeDe.push(fid);
+    rolDepsTotal[fid] = fijosRolDeps[fid];
   }
 
   const totalId = await writer.log({
@@ -310,11 +353,13 @@ export async function runRecetaProcess(
       `costo_mp=${mpResult.valor}` +
       (costo_energia     != null ? ` + costo_energia=${costo_energia}` : "") +
       (costo_combustible != null ? ` + costo_combustible=${costo_combustible}` : "") +
+      (costo_servicios   != null ? ` + costo_servicios=${costo_servicios}` : "") +
       ` → total=${costo_total}`,
     parametros_entrada: {
       costo_mp: mpResult.valor,
       costo_energia,
       costo_combustible,
+      costo_servicios,
     },
     nivel_jerarquia: 0,
     depende_de: dependeDe,
@@ -328,7 +373,7 @@ export async function runRecetaProcess(
     costo_combustible,
     costo_energia,
     costo_repuestos:     null,
-    costo_servicios:     null,
+    costo_servicios,
     costo_total,
     costo_por_ton: costo_total,
     costo_recibido_arrastre:  0,
