@@ -9,7 +9,10 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:reconciliation": "vitest run tests/reconciliation"
+    "test:reconciliation": "vitest run tests/reconciliation",
+    "db:status": "tsx scripts/db-status.ts",
+    "db:smoke": "tsx scripts/db-smoke-test.ts",
+    "predeploy": "npm run test && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",
