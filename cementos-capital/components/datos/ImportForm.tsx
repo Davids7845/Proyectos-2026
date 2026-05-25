@@ -38,6 +38,7 @@ export default function ImportForm({ versionId, disabled }: { versionId: string;
       }
       setReport(json.report);
       setPeriodos(json.parsed?.periodos ?? []);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err?.message ?? String(err));
     } finally {

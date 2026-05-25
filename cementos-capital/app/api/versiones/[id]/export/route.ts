@@ -45,7 +45,7 @@ export async function POST(
   const [
     { data: costoRows },
     { data: precios },
-    { data: procesos },
+    { data: _procesos }, // eslint-disable-line @typescript-eslint/no-unused-vars
   ] = await Promise.all([
     supabase
       .from("costo_proceso")

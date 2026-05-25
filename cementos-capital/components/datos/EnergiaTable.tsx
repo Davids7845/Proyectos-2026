@@ -19,6 +19,7 @@ interface Props {
   periodos: string[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function formatPeriodoHeader(p: string): string {
   const d = new Date(p);
   const mes = d.toLocaleDateString("es-CO", { month: "short", timeZone: "UTC" });

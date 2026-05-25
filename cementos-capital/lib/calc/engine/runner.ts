@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Orquestador del cálculo de presupuesto.
 // 1) Abre calculation_runs (estado=corriendo)
 // 2) Siembra formula_definitions (idempotente)

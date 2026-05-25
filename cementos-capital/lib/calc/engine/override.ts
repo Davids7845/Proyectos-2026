@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Override + propagación de un nodo de calculation_log hacia sus ancestros.
 //
 // Algoritmo:

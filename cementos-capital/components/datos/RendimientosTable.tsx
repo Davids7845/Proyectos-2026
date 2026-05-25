@@ -62,6 +62,7 @@ const CAMPOS: Campo[] = [
 ];
 
 export default function RendimientosTable({ rendimientos, procesos, periodos }: Props) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const procById = useMemo(() => new Map(procesos.map(p => [p.id, p])), [procesos]);
 
   const byProcPeriodo = useMemo(() => {

@@ -100,6 +100,7 @@ export default function PreciosTable({ versionId, precios, materiales, periodos,
         next.set(precioId, nuevoValor);
         return next;
       });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       setErrorMsg(e?.message ?? String(e));
     } finally {

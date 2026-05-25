@@ -29,7 +29,6 @@ import type {
 const CODIGO_CALIZA   = "CALTLVTRIT";
 const CODIGO_ARCILLA  = "ARCTLVTRIT";
 const CODIGO_MARTILLO_PROVEEDOR = "martillo"; // proveedor en precios_insumos
-const CODIGO_PRODUCTO = "MEZCPREHO";
 
 function precioKey(material_id: string, periodo: Periodo, proveedor: string | null = null): string {
   return `${material_id}|${periodo}|${proveedor ?? ""}`;

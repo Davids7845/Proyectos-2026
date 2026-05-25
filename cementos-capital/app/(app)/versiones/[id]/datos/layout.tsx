@@ -1,7 +1,5 @@
 // Sub-navegación compartida para la sección /datos de una versión.
 
-import Link from "next/link";
-
 export default async function DatosLayout({
   children,
   params,
