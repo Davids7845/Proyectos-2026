@@ -29,3 +29,7 @@ create policy "aliases_read" on material_aliases
   for select to authenticated using (true);
 
 -- service_role bypasea RLS automáticamente; no necesita policy explícita.
+
+-- GRANT explícito para PostgREST (Supabase requiere esto en algunos proyectos).
+grant select on material_aliases to authenticated, anon;
+grant all    on material_aliases to service_role;

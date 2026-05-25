@@ -117,12 +117,14 @@ async function main() {
     .select("id")
     .eq("id", createdVersionId);
 
-  const rlsBlocked = !anonErr && (anonData === null || anonData.length === 0);
+  // "blocked" = either PGRST error (no GRANT/policy) OR zero rows (RLS filtering)
+  const anonRows = anonData?.length ?? 0;
+  const rlsBlocked = !!anonErr || anonRows === 0;
   check(
     "Anon key NO puede ver la versión (RLS activo)",
     rlsBlocked,
     !rlsBlocked
-      ? `RLS FALTA — anon key leyó la versión (filas: ${anonData?.length ?? "?"}) — revisar policies`
+      ? `RLS FALTA — anon key leyó ${anonRows} fila(s) — ejecutar fix_rls.sql en SQL Editor`
       : undefined,
   );
 
