@@ -75,8 +75,29 @@ export async function loadParsedExcel(
   const procesosNoEncontrados = new Set<string>();
 
   // ──────────────── Precios ────────────────
+  // Casos especiales idénticos al fixture build_context_from_excel.ts:
+  // "Costo Adicional Martillo" → CALTLVTRIT con proveedor="martillo"
+  const PRECIOS_ESPECIALES: Record<string, { codigo: string; proveedor: string }> = {
+    "costo adicional martillo": { codigo: "CALTLVTRIT", proveedor: "martillo" },
+  };
+
   const preciosRows = parsed.precios
     .map(p => {
+      const nombreNorm = norm(p.material_nombre);
+      const especial = PRECIOS_ESPECIALES[nombreNorm];
+      if (especial) {
+        const materialId = idx.byCodigo.get(especial.codigo);
+        if (!materialId) return null;
+        return {
+          version_id: versionId,
+          material_id: materialId,
+          proveedor: especial.proveedor,
+          periodo: p.periodo,
+          precio_unitario: Number(p.precio),
+          unidad: p.unidad,
+          moneda: "COP",
+        };
+      }
       const materialId = resolveMaterial(idx, p.material_nombre);
       if (!materialId) {
         noEncontrados.add(p.material_nombre);
@@ -124,8 +145,28 @@ export async function loadParsedExcel(
   }
 
   // ──────────────── % Consumo ────────────────
+  // Casos especiales: en la sección % Consumo, las filas "Caliza" y "Martillo"
+  // representan el split de CALTLVTRIT entre dos roles, usando el nombre como proveedor.
+  const PCT_ESPECIALES: Record<string, { codigo: string; proveedor: string }> = {
+    "caliza":   { codigo: "CALTLVTRIT", proveedor: "caliza" },
+    "martillo": { codigo: "CALTLVTRIT", proveedor: "martillo" },
+  };
+
   const pctRows = parsed.porcentajes_consumo
     .map(p => {
+      const nombreNorm = norm(p.material_nombre);
+      const especial = PCT_ESPECIALES[nombreNorm];
+      if (especial) {
+        const materialId = idx.byCodigo.get(especial.codigo);
+        if (!materialId) return null;
+        return {
+          version_id: versionId,
+          material_id: materialId,
+          proveedor: especial.proveedor,
+          periodo: p.periodo,
+          porcentaje: Number(p.porcentaje),
+        };
+      }
       const materialId = resolveMaterial(idx, p.material_nombre);
       if (!materialId) {
         noEncontrados.add(p.material_nombre);
@@ -255,9 +296,21 @@ export async function loadParsedExcel(
       }
       report.recetas_creadas++;
 
+      // Overrides contextuales por producto (mismo patrón que build_context_from_excel.ts)
+      const RECETA_OVERRIDES: Record<string, Record<string, string>> = {
+        "mezcla prehomo":  { "caliza": "CALTLVTRIT", "arcilla": "ARCTLVTRIT" },
+        "harina cruda":    { "caliza": "CALTLVTRIT" },
+      };
+      const productoNorm = norm(producto);
+      const overrides = RECETA_OVERRIDES[productoNorm] ?? {};
+
       const lineasRows = lineas
         .map((ln, idx2) => {
-          const materialId = resolveMaterial(idx, ln.material_nombre);
+          const lnNorm = norm(ln.material_nombre);
+          const overrideCodigo = overrides[lnNorm];
+          const materialId = overrideCodigo
+            ? idx.byCodigo.get(overrideCodigo)
+            : resolveMaterial(idx, ln.material_nombre);
           if (!materialId) {
             noEncontrados.add(ln.material_nombre);
             return null;
