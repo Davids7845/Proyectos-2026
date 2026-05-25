@@ -103,6 +103,10 @@ export async function runCalculation(
   const runId = run.id;
 
   try {
+    // ─── Limpiar resultados de runs anteriores para esta versión ──
+    // Evita "duplicate key" al re-calcular: costo_proceso tiene unique(version_id, proceso_id, periodo).
+    await supabase.from("costo_proceso").delete().eq("version_id", opts.versionId);
+
     // ─── Sembrar formula_definitions (upsert) ─────────────────────
     const formulaIdByCodigo = await ensureFormulas(supabase);
 
@@ -274,8 +278,10 @@ async function loadContext(
     supabase.from("materiales").select("id, codigo, nombre, unidad_base").eq("activo", true),
     supabase.from("precios_insumos").select("material_id, proveedor, periodo, precio_unitario, unidad").eq("version_id", versionId),
     supabase.from("porcentajes_consumo").select("material_id, proveedor, periodo, porcentaje").eq("version_id", versionId),
-    supabase.from("recetas").select("id, producto_id, proceso_id, periodo").eq("version_id", versionId),
-    supabase.from("receta_lineas").select("receta_id, material_id, porcentaje, orden"),
+    // Receta con embed de receta_lineas filtrado por FK — evita el límite de 1000 filas
+    // global de Supabase cuando hay muchas versiones acumuladas.
+    supabase.from("recetas").select("id, producto_id, proceso_id, periodo, receta_lineas(receta_id, material_id, porcentaje, orden)").eq("version_id", versionId),
+    Promise.resolve({ data: [], error: null }),
     sb.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
     supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
     sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
@@ -288,7 +294,8 @@ async function loadContext(
   if (precErr) throw new Error(`precios_insumos: ${precErr.message}`);
   if (pctErr) throw new Error(`porcentajes_consumo: ${pctErr.message}`);
   if (recErr) throw new Error(`recetas: ${recErr.message}`);
-  if (lnErr) throw new Error(`receta_lineas: ${lnErr.message}`);
+  // lnErr placeholder — receta_lineas viene embebido en recetas vía PostgREST nested select
+  void lnErr;
   if (enerErr) throw new Error(`parametros_energia: ${enerErr.message}`);
   if (rendErr) throw new Error(`rendimientos: ${rendErr.message}`);
   // override tables are optional (may not exist until migration 007 is applied)
@@ -329,22 +336,26 @@ async function loadContext(
     });
   }
 
-  const lineasByReceta = new Map<UUID, RecetaCtx["lineas"]>();
-  for (const ln of lineasRaw ?? []) {
-    const arr = lineasByReceta.get(ln.receta_id) ?? [];
-    arr.push({ material_id: ln.material_id, porcentaje: Number(ln.porcentaje), orden: ln.orden });
-    lineasByReceta.set(ln.receta_id, arr);
-  }
-
+  // Embed: cada receta trae sus lineas en `receta_lineas` (PostgREST nested select).
   const recetasByProcesoPeriodo = new Map<string, RecetaCtx>();
-  for (const r of recetasRaw ?? []) {
+  for (const r of (recetasRaw ?? []) as Array<{
+    id: string;
+    producto_id: string;
+    proceso_id: string;
+    periodo: string;
+    receta_lineas?: Array<{ material_id: string; porcentaje: number; orden: number | null }>;
+  }>) {
     const k = `${r.proceso_id}|${r.periodo}`;
     recetasByProcesoPeriodo.set(k, {
       receta_id: r.id,
       producto_id: r.producto_id,
       proceso_id: r.proceso_id,
       periodo: r.periodo,
-      lineas: lineasByReceta.get(r.id) ?? [],
+      lineas: (r.receta_lineas ?? []).map(ln => ({
+        material_id: ln.material_id,
+        porcentaje: Number(ln.porcentaje),
+        orden: ln.orden,
+      })),
     });
   }
 
