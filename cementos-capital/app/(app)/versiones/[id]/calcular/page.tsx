@@ -20,7 +20,7 @@ export default async function CalcularPage({
   // Último run para esta versión
   const { data: lastRun } = await supabase
     .from("calculation_runs")
-    .select("id, estado, iniciado_en, finalizado_en, duracion_ms, total_calculos, error_msg")
+    .select("id, estado, iniciado_en, finalizado_en, duracion_ms, total_calculos, error_msg, procesos_omitidos")
     .eq("version_id", id)
     .order("iniciado_en", { ascending: false })
     .limit(1)
@@ -79,6 +79,20 @@ export default async function CalcularPage({
               </>
             )}
           </dl>
+          {Array.isArray(lastRun.procesos_omitidos) && lastRun.procesos_omitidos.length > 0 && (
+            <details className="mt-3">
+              <summary className="text-xs font-medium text-amber-700 cursor-pointer">
+                Procesos omitidos ({lastRun.procesos_omitidos.length})
+              </summary>
+              <ul className="mt-2 text-xs text-amber-900 list-disc list-inside max-h-72 overflow-auto">
+                {(lastRun.procesos_omitidos as Array<{ ord: number; razon: string }>).map((o, i) => (
+                  <li key={i}>
+                    <span className="font-mono text-amber-700">ORD{o.ord}</span> — {o.razon}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </section>
       )}
 

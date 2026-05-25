@@ -217,6 +217,7 @@ export type Database = {
           id: string
           iniciado_en: string
           iniciado_por: string | null
+          procesos_omitidos: Json | null
           total_calculos: number | null
           version_id: string
         }
@@ -228,6 +229,7 @@ export type Database = {
           id?: string
           iniciado_en?: string
           iniciado_por?: string | null
+          procesos_omitidos?: Json | null
           total_calculos?: number | null
           version_id: string
         }
@@ -239,6 +241,7 @@ export type Database = {
           id?: string
           iniciado_en?: string
           iniciado_por?: string | null
+          procesos_omitidos?: Json | null
           total_calculos?: number | null
           version_id?: string
         }

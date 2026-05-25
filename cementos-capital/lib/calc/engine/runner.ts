@@ -165,6 +165,7 @@ export async function runCalculation(
         finalizado_en: new Date().toISOString(),
         duracion_ms: duracion,
         total_calculos: totalCalculos,
+        procesos_omitidos: omitidos,
       })
       .eq("id", runId);
 
