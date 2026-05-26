@@ -142,8 +142,11 @@ export async function GET(
     topInsumos,
   };
 
-  // ESLint: react-pdf usa createElement no JSX en server route
-  const buffer = await renderToBuffer(createElement(ReporteEjecutivo, { data }));
+  // ESLint: react-pdf usa createElement no JSX en server route.
+  // Cast a any porque renderToBuffer espera DocumentProps pero acepta cualquier
+  // elemento que produzca un <Document/> en su raíz (que es lo que hace ReporteEjecutivo).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buffer = await renderToBuffer(createElement(ReporteEjecutivo, { data }) as any);
 
   const filename = `reporte-${version.nombre.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`;
   return new Response(buffer as unknown as BodyInit, {
