@@ -45,11 +45,14 @@ export async function POST(
   const [
     { data: costoRows },
     { data: precios },
-    { data: _procesos }, // eslint-disable-line @typescript-eslint/no-unused-vars
+    { data: procesosActivos },
+    { data: maestroSapRows },
+    { data: movimientosRows },
+    { data: rendimientosRows },
   ] = await Promise.all([
     supabase
       .from("costo_proceso")
-      .select("periodo, costo_por_ton, costo_total, costo_materia_prima, costo_energia, costo_combustible, proceso:procesos(id, ord, nombre, orden_topologico)")
+      .select("periodo, costo_por_ton, costo_total, costo_materia_prima, costo_energia, costo_combustible, costo_por_ton_arrastrado, costo_total_arrastrado, proceso:procesos(id, ord, nombre, orden_topologico)")
       .eq("run_id", lastRun.id),
     supabase
       .from("precios_insumos")
@@ -58,9 +61,24 @@ export async function POST(
       .order("periodo"),
     supabase
       .from("procesos")
-      .select("id, ord, nombre, orden_topologico")
+      .select("id, ord, nombre, orden_topologico, material")
       .eq("activo", true)
       .order("orden_topologico"),
+    supabase
+      .from("maestro_sap")
+      .select("material_id, proceso_id, clase_costo_id, orden_sap, clasificacion, tipo_insumo, material:materiales(codigo, nombre), proceso:procesos(ord, nombre), clase_costo:clases_costo(codigo, denominacion)"),
+    supabase
+      .from("v_movimientos_base")
+      .select("periodo, tipo_movimiento, clase_costo_codigo, clase_costo_denom, valor_monetario, cantidad, unidad, proceso_nombre, ord, material_nombre, orden_sap, clasificacion, tipo_insumo")
+      .eq("version_id", versionId)
+      .eq("run_id", lastRun.id)
+      .order("ord")
+      .order("clase_costo_codigo"),
+    supabase
+      .from("rendimientos")
+      .select("proceso_id, periodo, produccion_ton, proceso:procesos(ord, nombre)")
+      .eq("version_id", versionId)
+      .order("periodo"),
   ]);
 
   const rows = (costoRows ?? []) as Array<{
@@ -70,6 +88,8 @@ export async function POST(
     costo_materia_prima: number | null;
     costo_energia: number | null;
     costo_combustible: number | null;
+    costo_por_ton_arrastrado: number | null;
+    costo_total_arrastrado: number | null;
     proceso: { id: string; ord: number; nombre: string; orden_topologico: number } | null;
   }>;
 
@@ -313,6 +333,215 @@ export async function POST(
     row.getCell(8).value = costoTon || null;
     row.getCell(8).numFmt = "#,##0.00";
     row.getCell(8).alignment = { horizontal: "right" };
+  }
+
+  // ─── Hoja 6: ORD — lista de procesos activos ────────────────────────────────
+  const shOrd = wb.addWorksheet("ORD");
+  shOrd.getRow(1).values = ["ORD", "Proceso", "Material", "Orden Topológico"];
+  shOrd.getRow(1).font = { bold: true };
+  shOrd.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  shOrd.getColumn(1).width = 6;
+  shOrd.getColumn(2).width = 30;
+  shOrd.getColumn(3).width = 22;
+  shOrd.getColumn(4).width = 18;
+  let ordRow = 2;
+  for (const p of (procesosActivos ?? []) as any[]) {
+    const r = shOrd.getRow(ordRow++);
+    r.getCell(1).value = p.ord;
+    r.getCell(2).value = p.nombre;
+    r.getCell(3).value = p.material ?? "";
+    r.getCell(4).value = p.orden_topologico;
+    r.getCell(1).alignment = { horizontal: "center" };
+  }
+
+  // ─── Hoja 7: Maestro SAP ────────────────────────────────────────────────────
+  const shMaestro = wb.addWorksheet("Maestro SAP");
+  shMaestro.getRow(1).values = [
+    "ORD", "Proceso", "Material (código)", "Material (nombre)", "Clase Costo", "Denominación Clase", "Orden SAP", "Clasificación", "Tipo Insumo",
+  ];
+  shMaestro.getRow(1).font = { bold: true };
+  shMaestro.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  [6, 26, 18, 28, 14, 28, 12, 20, 20].forEach((w, i) => { shMaestro.getColumn(i + 1).width = w; });
+  let mRow = 2;
+  const maestroSorted = [...(maestroSapRows ?? [])] as any[];
+  maestroSorted.sort((a, b) => (a.proceso?.ord ?? 99) - (b.proceso?.ord ?? 99));
+  for (const m of maestroSorted) {
+    const r = shMaestro.getRow(mRow++);
+    r.getCell(1).value = m.proceso?.ord ?? null;
+    r.getCell(2).value = m.proceso?.nombre ?? "";
+    r.getCell(3).value = m.material?.codigo ?? "";
+    r.getCell(4).value = m.material?.nombre ?? "";
+    r.getCell(5).value = m.clase_costo?.codigo ?? "";
+    r.getCell(6).value = m.clase_costo?.denominacion ?? "";
+    r.getCell(7).value = m.orden_sap ?? "";
+    r.getCell(8).value = m.clasificacion ?? "";
+    r.getCell(9).value = m.tipo_insumo ?? "";
+    r.getCell(1).alignment = { horizontal: "center" };
+  }
+
+  // ─── Hoja 8: Base SAP (movimientos_contables) ───────────────────────────────
+  const hasSap = (movimientosRows ?? []).length > 0;
+  const shBase = wb.addWorksheet("Base SAP");
+  shBase.getRow(1).values = [
+    "Período", "ORD", "Proceso", "Tipo", "Clase Costo", "Denominación Clase",
+    "Material", "Clasificación", "Tipo Insumo", "Cantidad", "Unidad", "Valor COP", "Orden SAP",
+  ];
+  shBase.getRow(1).font = { bold: true };
+  shBase.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  [10, 5, 26, 10, 14, 28, 22, 18, 18, 14, 8, 16, 10].forEach((w, i) => { shBase.getColumn(i + 1).width = w; });
+  let bRow = 2;
+  if (hasSap) {
+    for (const m of (movimientosRows ?? []) as any[]) {
+      const r = shBase.getRow(bRow++);
+      r.getCell(1).value = m.periodo ? fmtPeriodo(m.periodo) : "";
+      r.getCell(2).value = m.ord ?? null;
+      r.getCell(3).value = m.proceso_nombre ?? "";
+      r.getCell(4).value = m.tipo_movimiento ?? "";
+      r.getCell(5).value = m.clase_costo_codigo ?? "";
+      r.getCell(6).value = m.clase_costo_denom ?? "";
+      r.getCell(7).value = m.material_nombre ?? "";
+      r.getCell(8).value = m.clasificacion ?? "";
+      r.getCell(9).value = m.tipo_insumo ?? "";
+      r.getCell(10).value = m.cantidad != null ? Number(m.cantidad) : null;
+      r.getCell(10).numFmt = "#,##0.00"; r.getCell(10).alignment = { horizontal: "right" };
+      r.getCell(11).value = m.unidad ?? "";
+      r.getCell(12).value = m.valor_monetario != null ? Number(m.valor_monetario) : null;
+      r.getCell(12).numFmt = "#,##0"; r.getCell(12).alignment = { horizontal: "right" };
+      r.getCell(13).value = m.orden_sap ?? "";
+    }
+  } else {
+    shBase.getRow(2).getCell(1).value = "Sin movimientos SAP (sap_enabled=false en esta versión)";
+    shBase.getRow(2).getCell(1).font = { italic: true, color: { argb: "FF9CA3AF" } };
+  }
+
+  // ─── Hoja 9: TD — Pivot proceso × clase_costo ───────────────────────────────
+  const shTd = wb.addWorksheet("TD");
+  if (hasSap) {
+    // Aggregate valor_monetario by (proceso_nombre+ord, clase_costo_codigo)
+    const tdByProc = new Map<string, { ord: number; nombre: string; byClase: Map<string, number> }>();
+    const tdClases = new Set<string>();
+    for (const m of (movimientosRows ?? []) as any[]) {
+      if (m.tipo_movimiento !== "entrada") continue;
+      const pk = `${m.ord ?? 99}|${m.proceso_nombre ?? ""}`;
+      if (!tdByProc.has(pk)) tdByProc.set(pk, { ord: m.ord ?? 99, nombre: m.proceso_nombre ?? "", byClase: new Map() });
+      const cc = m.clase_costo_codigo ?? "SIN_CLASE";
+      tdClases.add(cc);
+      const cur = tdByProc.get(pk)!;
+      cur.byClase.set(cc, (cur.byClase.get(cc) ?? 0) + Number(m.valor_monetario ?? 0));
+    }
+    const tdClasesSorted = Array.from(tdClases).sort();
+    const tdProcsSorted = Array.from(tdByProc.values()).sort((a, b) => a.ord - b.ord);
+
+    const hdrTd = shTd.getRow(1);
+    hdrTd.getCell(1).value = "ORD"; hdrTd.getCell(2).value = "Proceso";
+    tdClasesSorted.forEach((cc, i) => { hdrTd.getCell(i + 3).value = cc; });
+    hdrTd.font = { bold: true };
+    hdrTd.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+    shTd.getColumn(1).width = 5; shTd.getColumn(2).width = 28;
+    tdClasesSorted.forEach((_, i) => { shTd.getColumn(i + 3).width = 16; });
+
+    let tdRow = 2;
+    for (const proc of tdProcsSorted) {
+      const r = shTd.getRow(tdRow++);
+      r.getCell(1).value = proc.ord;
+      r.getCell(2).value = proc.nombre;
+      tdClasesSorted.forEach((cc, i) => {
+        const v = proc.byClase.get(cc);
+        const cell = r.getCell(i + 3);
+        cell.value = v ?? null;
+        if (v != null) { cell.numFmt = "#,##0"; cell.alignment = { horizontal: "right" }; }
+      });
+    }
+  } else {
+    shTd.getRow(1).getCell(1).value = "Sin movimientos SAP para generar pivot.";
+    shTd.getRow(1).getCell(1).font = { italic: true, color: { argb: "FF9CA3AF" } };
+  }
+
+  // ─── Hoja 10: Costo Arrastrado ───────────────────────────────────────────────
+  const shArrastrado = wb.addWorksheet("Costo Arrastrado", { views: [{ state: "frozen", xSplit: 1, ySplit: 2 }] });
+  shArrastrado.getRow(1).getCell(1).value = `Versión: ${version.nombre}`;
+  shArrastrado.getRow(1).getCell(1).font = { bold: true, size: 12 };
+  const hdrArr = shArrastrado.getRow(2);
+  hdrArr.getCell(1).value = "Proceso"; hdrArr.getCell(1).font = { bold: true };
+  hdrArr.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  periodos.forEach((per, i) => {
+    const cell = hdrArr.getCell(i + 2);
+    cell.value = fmtPeriodo(per); cell.font = { bold: true };
+    cell.alignment = { horizontal: "right" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  });
+  const byProcesoArr = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (!r.proceso) continue;
+    const pid = r.proceso.id;
+    if (!byProcesoArr.has(pid)) byProcesoArr.set(pid, new Map());
+    byProcesoArr.get(pid)!.set(r.periodo, Number(r.costo_por_ton_arrastrado ?? r.costo_por_ton));
+  }
+  let arrIdx = 3;
+  for (const pid of filas) {
+    const meta = procesoMeta.get(pid)!;
+    const dataRow = shArrastrado.getRow(arrIdx++);
+    dataRow.getCell(1).value = `${meta.ord} - ${meta.nombre}`;
+    periodos.forEach((per, i) => {
+      const v = byProcesoArr.get(pid)?.get(per);
+      const cell = dataRow.getCell(i + 2);
+      cell.value = v != null ? v : null;
+      cell.numFmt = "#,##0"; cell.alignment = { horizontal: "right" };
+    });
+  }
+  shArrastrado.getColumn(1).width = 34;
+  periodos.forEach((_, i) => { shArrastrado.getColumn(i + 2).width = 12; });
+
+  // ─── Hoja 11: Energía ───────────────────────────────────────────────────────
+  const shEnergia = wb.addWorksheet("Energía");
+  shEnergia.getRow(1).values = [
+    "Período", "ORD", "Proceso", "Producción (Ton)", "kWh/Ton", "kWh Total", "COP/kWh", "Costo Total COP",
+  ];
+  shEnergia.getRow(1).font = { bold: true };
+  shEnergia.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  [10, 5, 26, 16, 12, 16, 12, 18].forEach((w, i) => { shEnergia.getColumn(i + 1).width = w; });
+  // Build rendimiento map for production lookup (ord+periodo since the view doesn't expose proceso_id)
+  const rendByOrdPer = new Map<string, number>();
+  for (const rend of (rendimientosRows ?? []) as any[]) {
+    const ord = rend.proceso?.ord;
+    if (ord != null) rendByOrdPer.set(`${ord}|${rend.periodo}`, Number(rend.produccion_ton ?? 0));
+  }
+  // Use movimientos Base SAP for energy rows (clase 7405050003)
+  if (hasSap) {
+    const energiaMovs = (movimientosRows ?? []).filter((m: any) => m.clase_costo_codigo === "7405050003");
+    let eRow = 2;
+    for (const m of energiaMovs as any[]) {
+      const r = shEnergia.getRow(eRow++);
+      const kwh = Number(m.cantidad ?? 0);
+      const cop = Number(m.valor_monetario ?? 0);
+      const prodKey = `${m.ord}|${m.periodo}`;
+      const prod = rendByOrdPer.get(prodKey) ?? 0;
+      r.getCell(1).value = m.periodo ? fmtPeriodo(m.periodo) : "";
+      r.getCell(2).value = m.ord ?? null;
+      r.getCell(3).value = m.proceso_nombre ?? "";
+      r.getCell(4).value = prod || null;
+      if (prod) { r.getCell(4).numFmt = "#,##0"; r.getCell(4).alignment = { horizontal: "right" }; }
+      r.getCell(5).value = prod > 0 ? kwh / prod : null;
+      if (prod > 0) { r.getCell(5).numFmt = "#,##0.00"; r.getCell(5).alignment = { horizontal: "right" }; }
+      r.getCell(6).value = kwh || null;
+      if (kwh) { r.getCell(6).numFmt = "#,##0"; r.getCell(6).alignment = { horizontal: "right" }; }
+      r.getCell(7).value = kwh > 0 ? cop / kwh : null;
+      if (kwh > 0) { r.getCell(7).numFmt = "#,##0.00"; r.getCell(7).alignment = { horizontal: "right" }; }
+      r.getCell(8).value = cop || null;
+      if (cop) { r.getCell(8).numFmt = "#,##0"; r.getCell(8).alignment = { horizontal: "right" }; }
+    }
+  } else {
+    // Fallback: use costo_energia from costo_proceso
+    let eRow = 2;
+    for (const r of rows) {
+      if (r.costo_energia == null) continue;
+      const row = shEnergia.getRow(eRow++);
+      row.getCell(1).value = fmtPeriodo(r.periodo);
+      row.getCell(2).value = r.proceso?.ord ?? null;
+      row.getCell(3).value = r.proceso?.nombre ?? "";
+      row.getCell(8).value = r.costo_energia;
+      row.getCell(8).numFmt = "#,##0"; row.getCell(8).alignment = { horizontal: "right" };
+    }
   }
 
   // Serialize to buffer
