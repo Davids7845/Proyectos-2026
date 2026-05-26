@@ -47,13 +47,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     .limit(1)
     .maybeSingle();
 
-  // Periodos disponibles para este proceso en el último run
-  const { data: costoProcRaw } = await supabase
-    .from("costo_proceso")
-    .select("periodo, costo_por_ton, costo_total, produccion_ton:costo_proceso(*)")
-    .eq("run_id", lastRun?.id ?? "")
-    .eq("proceso_id", proceso.id);
-
   // Obtener periodos del costo_proceso
   const { data: costoProcPeriodos } = await supabase
     .from("costo_proceso")
