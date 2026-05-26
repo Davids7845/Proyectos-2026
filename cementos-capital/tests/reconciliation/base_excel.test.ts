@@ -362,7 +362,7 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
     }
   });
 
-  it("ENERGÍA (7405050003) total ≤ 15% del Excel Base período 1", () => {
+  it("ENERGÍA (7405050003) total ≤ 12% del Excel Base período 1", () => {
     const excelVal = excelTotals.get("7405050003") ?? 0;
     const calcTotal = db.tables["movimientos_contables"]
       .filter(m => m["clase_costo_id"] === ccId("7405050003"))
@@ -374,7 +374,35 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
       ` excel=${excelVal.toLocaleString("es-CO", { maximumFractionDigits: 0 })}` +
       ` diff=${(relError * 100).toFixed(2)}%`
     );
-    expect(relError).toBeLessThan(0.15);
+    expect(relError).toBeLessThan(0.12);
+  });
+
+  // ── Cuadre contable global por periodo (Fase 3 Sesión 3) ───────────────────
+  // Validación: para cada periodo, la suma neta de movimientos de semielaborados
+  // (entradas + traslados) debe ser cero. Esto garantiza que el ciclo
+  // productor → consumidor está balanceado en cada mes.
+  it("cuadre contable global: suma neta semielab por periodo = 0", () => {
+    const SEMI_CODES = ["MEZCPREHO", "HARINACRUD", "CARBONMOL", "COMBALT", "CLINKER001"];
+    const semiMatIds = new Set(
+      (db.tables["materiales"] ?? [])
+        .filter(m => SEMI_CODES.includes(String(m["codigo"])))
+        .map(m => String(m["id"])),
+    );
+
+    const sumaPorPeriodo = new Map<string, number>();
+    for (const m of db.tables["movimientos_contables"]) {
+      const matId = m["material_id"] as string | null;
+      if (!matId || !semiMatIds.has(matId)) continue;
+      const per = String(m["periodo"]);
+      const val = Number(m["valor_monetario"] ?? 0);
+      sumaPorPeriodo.set(per, (sumaPorPeriodo.get(per) ?? 0) + val);
+    }
+
+    expect(sumaPorPeriodo.size).toBeGreaterThan(0);
+    for (const [per, suma] of Array.from(sumaPorPeriodo.entries())) {
+      // Tolerancia $1 COP por error de redondeo flotante acumulado
+      expect(Math.abs(suma), `periodo ${per}: suma neta semielab = ${suma}`).toBeLessThan(1);
+    }
   });
 
   it("Diagnóstico: distribución de movimientos por clase_costo", () => {
@@ -397,14 +425,16 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
   //    completa de semielaborados, incomparable monetariamente con la Base SAP)
   // excelCmp=true  → además compara contra Excel Base período 1 con tolerancia tol
   //   (las brechas observadas —4% yeso, 9% hierro, 23% carbón, 11% energía—
-  //    son consecuencia de diferencias precio-presupuesto vs precio-real SAP;
-  //    no modificar lib/calc/*, tolerancias ≥ las indicadas en spec)
+  //    son consecuencia de diferencias precio-presupuesto vs precio-real SAP.
+  //    Fase 3 Sesión 3: tolerancias apretadas a ~1pp sobre gap observado para
+  //    detectar regresiones, pero no se baja a 2% porque requeriría modificar
+  //    lib/calc/ — eso queda para Fase 4 refinamiento de motor).
   it.each([
     ["7105330101", "CTO. MP CALIZAS NAL",     false, 0.02],
-    ["7105450101", "CTO. MP YES/ESCA NAL",    true,  0.08],
-    ["7105040101", "MP CORRECT HIERO NAL",    true,  0.15],
-    ["7355050103", "CTO COMBUS SOL NAC",       true,  0.30],
-    ["7405050003", "ENERGIA ELECTRICA",        true,  0.15],
+    ["7105450101", "CTO. MP YES/ESCA NAL",    true,  0.05],
+    ["7105040101", "MP CORRECT HIERO NAL",    true,  0.10],
+    ["7355050103", "CTO COMBUS SOL NAC",       true,  0.25],
+    ["7405050003", "ENERGIA ELECTRICA",        true,  0.12],
     ["7199990001", "CONSUMOS SEMIELABORADOS",  false, 0.02],
   ] as const)(
     "clase %s (%s): engine clasifica movimientos correctamente",
