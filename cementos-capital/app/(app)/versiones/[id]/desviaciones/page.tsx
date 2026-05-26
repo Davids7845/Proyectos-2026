@@ -105,6 +105,15 @@ export default async function DesviacionesPage({ params, searchParams }: PagePro
     .from("materiales")
     .select("id, codigo, nombre");
 
+  // Runs disponibles del motor (para opción "Usar como real")
+  const { data: runs } = await supabase
+    .from("calculation_runs")
+    .select("id, iniciado_en, estado, total_calculos")
+    .eq("version_id", id)
+    .eq("estado", "completado")
+    .order("iniciado_en", { ascending: false })
+    .limit(20);
+
   const procMap = new Map((procesos ?? []).map(p => [p.id, p]));
   const matMap  = new Map((materiales ?? []).map(m => [m.id, m]));
 
@@ -175,6 +184,11 @@ export default async function DesviacionesPage({ params, searchParams }: PagePro
         <DesviacionesFilters
           años={años}
           meses={meses}
+          runs={(runs ?? []).map((r: { id: string; iniciado_en: string; total_calculos: number | null }) => ({
+            id: r.id,
+            iniciado_en: r.iniciado_en,
+            total_calculos: r.total_calculos ?? 0,
+          }))}
           currentAño={filterAño}
           currentMes={filterMes}
           versionId={id}

@@ -14,11 +14,18 @@ create table if not exists costos_reales (
   concepto_tipo   varchar(20) not null
     check (concepto_tipo in ('material', 'energia', 'fijo')),
   concepto_codigo varchar(50) not null,
-  row_excel       integer not null,
+  -- row_excel: NULL cuando los datos vienen del motor de cálculo (no de Excel).
+  row_excel       integer,
   consumo         decimal(18,6),
   precio_unitario decimal(18,4),
+  -- valor_monetario está en COP por tonelada de producto del proceso,
+  -- consistente con la col "Total" de la hoja Costo del Excel.
   valor_monetario decimal(18,2) not null,
   unidad          varchar(20),
+  -- origen: 'excel' = panel Real de hoja Costo; 'calc' = derivado del motor.
+  origen          varchar(10) not null default 'excel'
+    check (origen in ('excel', 'calc')),
+  run_id          uuid references calculation_runs(id),
   observaciones   text,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
@@ -49,9 +56,10 @@ grant all    on costos_reales to service_role;
 
 -- Vista de comparación presupuesto vs real: agrega movimientos_contables
 -- (lado presupuesto, generado por el motor) y costos_reales (lado real,
--- cargado desde Excel) por proceso × material × período.
+-- cargado desde Excel o desde un run del motor) por proceso × material ×
+-- período. Ambos lados se normalizan a COP por tonelada de producto.
 create or replace view v_desviaciones as
-with ppto as (
+with ppto_abs as (
   -- Lado presupuesto: agregamos las entradas (entrada = consumo) ignoramos
   -- traslados que tienen valor_monetario null.
   select
@@ -59,11 +67,31 @@ with ppto as (
     m.periodo,
     m.proceso_id,
     m.material_id,
-    sum(m.valor_monetario) as valor_ppto,
-    sum(m.cantidad)        as cantidad_ppto
+    sum(m.valor_monetario) as valor_abs,
+    sum(m.cantidad)        as cantidad_abs
   from movimientos_contables m
   where m.tipo_movimiento = 'entrada'
   group by m.version_id, m.periodo, m.proceso_id, m.material_id
+), rend as (
+  select r.version_id, r.periodo, r.proceso_id, r.produccion_ton
+  from rendimientos r
+  where r.produccion_ton is not null and r.produccion_ton > 0
+), ppto as (
+  select
+    p.version_id,
+    p.periodo,
+    p.proceso_id,
+    p.material_id,
+    -- Convertir a COP/Ton de producto si hay producción registrada
+    case when r.produccion_ton is not null
+         then p.valor_abs / r.produccion_ton
+         else null end as valor_ppto,
+    p.cantidad_abs as cantidad_ppto
+  from ppto_abs p
+  left join rend r
+    on r.version_id = p.version_id
+   and r.periodo    = p.periodo
+   and r.proceso_id = p.proceso_id
 ), real as (
   select
     r.version_id,
