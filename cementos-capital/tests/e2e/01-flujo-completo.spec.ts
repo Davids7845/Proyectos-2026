@@ -194,7 +194,18 @@ test('Flujo completo: login → importar → calcular → validar costos → tra
     expect(rowCount, `Se esperaban ≥3 filas en detalle ORD5, encontradas: ${rowCount}`).toBeGreaterThan(2);
   });
 
-  // === PASO 11: Exportar Excel ===
+  // === PASO 11: Vista Base SAP ===
+  await test.step('Vista Base SAP muestra movimientos contables', async () => {
+    await page.goto(`/versiones/${versionId}/base`);
+    await expect(page.locator('h1').filter({ hasText: /Movimientos contables/i })).toBeVisible({ timeout: 10_000 });
+    // La tabla de movimientos aparece cuando SAP está habilitado; si no, muestra estado vacío.
+    // En ambos casos la página carga correctamente.
+    const hasTable = await page.locator('table thead').isVisible({ timeout: 5_000 }).catch(() => false);
+    const hasEmpty = await page.locator('text=/No hay movimientos|SAP deshabilitado/i').isVisible({ timeout: 2_000 }).catch(() => false);
+    expect(hasTable || hasEmpty, 'Base SAP debe mostrar tabla o estado vacío').toBe(true);
+  });
+
+  // === PASO 12: Exportar Excel ===
   await test.step('Exportar Excel descarga un archivo .xlsx', async () => {
     await page.goto(`/versiones/${versionId}/costo`);
     await expect(page.locator('table').first()).toBeVisible({ timeout: 10_000 });

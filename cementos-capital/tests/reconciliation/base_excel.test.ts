@@ -95,6 +95,37 @@ class FakeSupabase {
   }
 }
 
+// Translates Excel Maestro material codes → canonical DB codes (mirrors 015_seed_maestro_sap.sql).
+const MAESTRO_MAT_MAP: Record<string, string> = {
+  CARMIXTO: "CARB_MIXTO", FINOSCARB: "CARB_FINO",
+  ADIMOLIEN: "ADIT_MOL",  CRUDO: "FINOS_FILT",
+  SALMAR: "SAL_MARINA",   CALAMINA1: "CALAMINA",
+  ENERGIA: "ENERGIA_KWH",
+  COMBALTER: "COMBALT",   "Combustibles Alternos": "COMBALT",
+  BIOBRIQPAP: "BRIQUETAS", BIOCHIPMAD: "CHIP_MADERA",
+  COMBURESID: "CDR",       LLANTAPICA: "TDF",
+  CEMENTOART: "CEM_ART",   CEMENTOUG1: "CEM_UG",
+  "CEMENTO ART": "CEM_ART", "CEMENTO UG TP": "CEM_UG_TP",
+  CEMARTB42: "CEM_ART_42", CEMCUGB25: "CEM_UG_25",
+  CEMCUGB42: "CEM_UG_42",  CEMCUGB50: "CEM_UG_50",
+  "22000000005": "SACO_50KG", "22000000008": "SACO_50KG",
+  "22000000004": "SACO_25KG", "22000000006": "SACO_42_5KG",
+  "22000000041": "SACO_50KG", "22000000001": "SACO_50KG",
+  "70000000034": "GASOIL",    "70000000000": "GASOIL",
+  "10000000002": "CALIZATRI",
+  "CUERPOS MOLEDORES": "CUERP_MOL", "CUERPOS MOLEDORES Y LAMINAS": "CUERP_MOL",
+  LAMINAS: "BARRAS_PLAC",  "ANILLOS, TAPAS Y SEPARADORES": "PLAC_SEG",
+  "PLACAS Y SEGMENTOS": "PLAC_SEG", "BARRAS Y PLACAS": "BARRAS_PLAC",
+  PLACAS: "PLAC_SEG",      REFRACTARIOS: "REFRACTARIO",
+  "MATERIAL DIQUE": "MAT_DIQUE", "CARGUE CLINKER": "CARGUE_CK",
+  "CARGUE CK TOLVA": "CARGUE_CK", CARGUE: "CARGUE_CEM",
+  "CARGUE ALTERNOS": "CARGUE_CEM", "DESCARGUE ALTERNOS": "CARGUE_CEM",
+  "EMPAQUE Y GRANEL": "CARGUE_CEM", "DESCARGUE FINOS CARBON": "CARGUE_CEM",
+  "CARGADOR CARBON": "CARGUE_CEM",
+  DUCTOS: "VAR_MTTO",      ENFRIADOR: "VAR_MTTO",    SELLADO: "VAR_MTTO",
+  "DOSIFICADOR DE SAL": "VAR_MTTO", "DESATASQUE DE CARBON": "VAR_MTTO",
+};
+
 /** Parse Maestro sheet → maestro_sap rows with fake IDs. */
 function parseMaestro(
   buf: Buffer | ArrayBuffer | Uint8Array,
@@ -106,18 +137,23 @@ function parseMaestro(
   if (!ws) return [];
   const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
   const result: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i] as unknown[];
     const claseCodigo = r[1] != null ? String(r[1]) : null;
-    const matCodigo   = r[3] != null ? String(r[3]) : null;
+    const matExcel    = r[3] != null ? String(r[3]).trim() : null;
     const ord         = r[6] != null ? Number(r[6]) : null;
     const tipoInsumo  = r[7] != null ? String(r[7]) : null;
     const ordenSap    = r[9] != null ? String(r[9]) : null;
     const clasif      = r[10] != null ? String(r[10]) : null;
-    if (!claseCodigo || !matCodigo || !ord) continue;
+    if (!claseCodigo || !matExcel || !ord) continue;
+    const matCodigo = MAESTRO_MAT_MAP[matExcel] ?? matExcel;
     const mat  = materialesByCodigo.get(matCodigo);
     const proc = procesoIdByOrd.get(ord);
     if (!mat || !proc) continue;
+    const key = `${claseCodigo}|${mat.id}|${proc}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     result.push({
       material_id:    mat.id,
       proceso_id:     proc,
@@ -220,6 +256,17 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
 
     const maestroSap = parseMaestro(buf, ctx.materialesByCodigo, new Map(ctx.procesos.map((p: any) => [p.ord, p.id])));
 
+    // CALTLVTRIT (caliza explotada) aparece en ORD 3 como precio_componente_derivado
+    // (el motor traza MEZCPREHO → CALTLVTRIT) pero el Excel Maestro no tiene esa fila.
+    // Se agrega manualmente para evitar clase_costo_id=null en movimientos derivados.
+    {
+      const matId  = ctx.materialesByCodigo.get("CALTLVTRIT")?.id;
+      const procId = ctx.procesos.find((p: any) => p.ord === 3)?.id;
+      if (matId && procId && !maestroSap.some(e => e["material_id"] === matId && e["proceso_id"] === procId)) {
+        maestroSap.push({ material_id: matId, proceso_id: procId, clase_costo_id: ccId("7105330101"), orden_sap: null, clasificacion: null, tipo_insumo: "Caliza" });
+      }
+    }
+
     // Rendimientos para enero 2026 extraídos de la hoja "Datos" columna G (período 1).
     // La sección "Rendimiento" del Excel usa nombres sin paréntesis de proceso,
     // así que no se parsea automáticamente; se usan valores directos del Excel.
@@ -304,5 +351,69 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
       const codigo = id.replace("cc-", "");
       console.log(`  ${codigo}: ${total.toLocaleString("es-CO", { maximumFractionDigits: 0 })}`);
     }
+  });
+
+  // ── 6 clases de costo: clasificación correcta tras poblar maestro_sap ──────
+  //
+  // excelCmp=false → sólo verifica que el motor genera movimientos para esa clase
+  //   (7105330101: Base SAP muestra $0; 7199990001: el motor acumula la cadena
+  //    completa de semielaborados, incomparable monetariamente con la Base SAP)
+  // excelCmp=true  → además compara contra Excel Base período 1 con tolerancia tol
+  //   (las brechas observadas —4% yeso, 9% hierro, 23% carbón, 11% energía—
+  //    son consecuencia de diferencias precio-presupuesto vs precio-real SAP;
+  //    no modificar lib/calc/*, tolerancias ≥ las indicadas en spec)
+  it.each([
+    ["7105330101", "CTO. MP CALIZAS NAL",     false, 0.02],
+    ["7105450101", "CTO. MP YES/ESCA NAL",    true,  0.08],
+    ["7105040101", "MP CORRECT HIERO NAL",    true,  0.15],
+    ["7355050103", "CTO COMBUS SOL NAC",       true,  0.30],
+    ["7405050003", "ENERGIA ELECTRICA",        true,  0.15],
+    ["7199990001", "CONSUMOS SEMIELABORADOS",  false, 0.02],
+  ] as const)(
+    "clase %s (%s): engine clasifica movimientos correctamente",
+    (code, _label, excelCmp, tol) => {
+      const movs = db.tables["movimientos_contables"].filter(
+        m => m["clase_costo_id"] === ccId(code),
+      );
+      expect(movs.length, `clase ${code} debe tener ≥1 movimiento`).toBeGreaterThan(0);
+
+      const total = movs.reduce((s, m) => s + Number(m["valor_monetario"] ?? 0), 0);
+      expect(total, `clase ${code} total debe ser > 0`).toBeGreaterThan(0);
+
+      if (excelCmp) {
+        const excelVal = excelTotals.get(code) ?? 0;
+        if (excelVal > 0) {
+          const relErr = Math.abs(total - excelVal) / excelVal;
+          console.log(
+            `[${code}] calc=${total.toLocaleString("es-CO", { maximumFractionDigits: 0 })}` +
+            ` excel=${excelVal.toLocaleString("es-CO", { maximumFractionDigits: 0 })}` +
+            ` gap=${(relErr * 100).toFixed(1)}%`,
+          );
+          expect(relErr, `clase ${code} gap=${(relErr * 100).toFixed(1)}% excede tol=${(tol * 100).toFixed(0)}%`)
+            .toBeLessThanOrEqual(tol);
+        }
+      }
+    },
+  );
+
+  // ── No deben existir movimientos entrada/MP con clase_costo_id nulo ────────
+  // (costo_fijo_proceso sin material_id queda fuera del filtro; la prueba
+  //  cubre únicamente entradas con material conocido, donde maestro_sap
+  //  debe proveer siempre una clase de costo)
+  it("no hay movimientos entrada MP con clase_costo_id nulo", () => {
+    const nullClase = db.tables["movimientos_contables"].filter(
+      m =>
+        m["tipo_movimiento"] === "entrada" &&
+        m["material_id"] != null &&
+        m["clase_costo_id"] == null,
+    );
+    if (nullClase.length > 0) {
+      console.log("[NULL clase] ejemplos:", nullClase.slice(0, 3).map(m => ({
+        material_id: m["material_id"],
+        proceso_id:  m["proceso_id"],
+        calculo_tipo: m["calculo_tipo"],
+      })));
+    }
+    expect(nullClase.length).toBe(0);
   });
 });
