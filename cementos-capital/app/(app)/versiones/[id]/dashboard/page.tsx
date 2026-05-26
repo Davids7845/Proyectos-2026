@@ -94,6 +94,14 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex gap-2">
+          <a
+            href={`/api/versiones/${id}/pdf`}
+            className="text-sm text-gray-700 border border-gray-300 hover:bg-gray-50 rounded px-3 py-1.5"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Descargar PDF
+          </a>
           <Link
             href={`/versiones/${id}/costo`}
             className="text-sm text-gray-600 hover:text-gray-900 border border-gray-300 hover:bg-gray-50 rounded px-3 py-1.5"
