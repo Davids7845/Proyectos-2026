@@ -237,6 +237,8 @@ export async function generateMovimientos(
       });
 
       // Traslado en el proceso productor para semielaborados
+      // valor_monetario es -valorTotal: el productor "descarga" el valor que
+      // el consumidor recibe, cuadrando Debe/Haber por par (Fase 3 Sesión 2).
       if (esSemi) {
         const productorOrd = SEMIELABORADO_PRODUCTOR_ORD[matCodigo];
         const productorId  = ordToProcId.get(productorOrd);
@@ -249,7 +251,7 @@ export async function generateMovimientos(
             material_id:     log.material_id,
             proceso_id:      productorId,
             tipo_movimiento: "traslado",
-            valor_monetario: null,
+            valor_monetario: -valorTotal,
             cantidad:        -cantidad,
             unidad:          matInfo?.unidad_base ?? "T",
             traslado_desde:  productorId,
@@ -325,6 +327,7 @@ export async function generateMovimientos(
       });
 
       // Traslado si el combustible es un semielaborado (Carbón Molido, Alternos)
+      // valor_monetario es -valorTotal: cuadre Debe/Haber (Fase 3 Sesión 2).
       if (matCodigo in SEMIELABORADO_PRODUCTOR_ORD) {
         const productorOrd = SEMIELABORADO_PRODUCTOR_ORD[matCodigo];
         const productorId  = ordToProcId.get(productorOrd);
@@ -337,7 +340,7 @@ export async function generateMovimientos(
             material_id:     log.material_id,
             proceso_id:      productorId,
             tipo_movimiento: "traslado",
-            valor_monetario: null,
+            valor_monetario: -valorTotal,
             cantidad:        -cantidad,
             unidad:          matInfo?.unidad_base ?? "T",
             traslado_desde:  productorId,
@@ -345,6 +348,7 @@ export async function generateMovimientos(
             calc_id:         log.id,
             fecha_contabilizacion: fechaDoc,
             fecha_documento:       fechaDoc,
+            denominacion_clase_contrapartida: claseTraslId ? clasesDenomById.get(claseTraslId) ?? null : null,
           });
         }
       }

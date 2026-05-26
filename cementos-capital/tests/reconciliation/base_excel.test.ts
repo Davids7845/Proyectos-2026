@@ -316,12 +316,49 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
     }
   });
 
-  it("todos los traslados tienen cantidad negativa y valor_monetario nulo", () => {
+  it("todos los traslados tienen cantidad y valor_monetario negativos", () => {
     const traslados = db.tables["movimientos_contables"].filter(m => m["tipo_movimiento"] === "traslado");
     expect(traslados.length).toBeGreaterThan(0);
     for (const t of traslados) {
       expect(Number(t["cantidad"])).toBeLessThan(0);
-      expect(t["valor_monetario"]).toBeNull();
+      expect(Number(t["valor_monetario"])).toBeLessThan(0);
+    }
+  });
+
+  // ── Cuadre contable Debe/Haber (Fase 3 Sesión 2) ───────────────────────────
+  // Cada par entrada↔traslado de un semielaborado debe sumar 0 en valor_monetario:
+  // el productor descarga lo mismo que el consumidor recibe.
+  it("cuadre Debe/Haber: suma de traslados + entradas semielab = 0 por par", () => {
+    const SEMI_CODES = ["MEZCPREHO", "HARINACRUD", "CARBONMOL", "COMBALT", "CLINKER001"];
+    // Buscar IDs de materiales semielaborados
+    const semiMatIds = new Set(
+      (db.tables["materiales"] ?? [])
+        .filter(m => SEMI_CODES.includes(String(m["codigo"])))
+        .map(m => String(m["id"])),
+    );
+
+    type Pair = { entrada: number; traslado: number };
+    const pares = new Map<string, Pair>();
+
+    for (const m of db.tables["movimientos_contables"]) {
+      const matId = m["material_id"] as string | null;
+      if (!matId || !semiMatIds.has(matId)) continue;
+      const tipo = m["tipo_movimiento"] as string;
+      // Key = material × periodo × proc consumidor (traslado_hasta) ó proc consumidor (entrada)
+      const procConsumidor = tipo === "traslado" ? m["traslado_hasta"] : m["proceso_id"];
+      const key = `${matId}|${m["periodo"]}|${procConsumidor}`;
+      const cur = pares.get(key) ?? { entrada: 0, traslado: 0 };
+      const val = Number(m["valor_monetario"] ?? 0);
+      if (tipo === "entrada") cur.entrada += val;
+      else if (tipo === "traslado") cur.traslado += val;
+      pares.set(key, cur);
+    }
+
+    expect(pares.size, "debe haber ≥1 par semielab").toBeGreaterThan(0);
+    for (const [key, { entrada, traslado }] of Array.from(pares.entries())) {
+      const suma = entrada + traslado;
+      // Tolerancia absoluta: $1 COP (errores de redondeo flotante)
+      expect(Math.abs(suma), `par ${key}: entrada=${entrada} traslado=${traslado} suma=${suma}`).toBeLessThan(1);
     }
   });
 

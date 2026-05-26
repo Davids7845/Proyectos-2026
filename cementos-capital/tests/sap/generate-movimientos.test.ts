@@ -146,12 +146,15 @@ describe("generateMovimientos (unit)", () => {
     expect(Number(entradaSemi!["valor_monetario"])).toBeCloseTo(50_000 * 1.55 * 1000);
 
     // Traslado en ORD 3 (proceso productor de HARINACRUD)
+    // Fase 3 Sesión 2: valor_monetario = -valorTotal para cuadre Debe/Haber.
     const traslado = movs.find(m => m["material_id"] === "mat-HARINACRUD" && m["tipo_movimiento"] === "traslado");
     expect(traslado).toBeDefined();
     expect(traslado!["clase_costo_id"]).toBe("cc-trasl");
     expect(Number(traslado!["cantidad"])).toBeCloseTo(-1.55 * 1000);
     expect(traslado!["proceso_id"]).toBe("proc-3");
-    expect(traslado!["valor_monetario"]).toBeNull();
+    expect(Number(traslado!["valor_monetario"])).toBeCloseTo(-50_000 * 1.55 * 1000);
+    // Cuadre por par: entrada + traslado = 0
+    expect(Number(entradaSemi!["valor_monetario"]) + Number(traslado!["valor_monetario"])).toBeCloseTo(0);
   });
 
   it("MP directo usa clase_costo del maestro_sap", async () => {
