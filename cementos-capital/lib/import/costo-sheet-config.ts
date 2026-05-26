@@ -100,3 +100,95 @@ export const COSTO_MATERIAL_ROWS: Record<
     { row: 89, material_codigo: "YESO00001" },
   ],
 };
+
+// ─────────────────────────────────────────────────────────────────
+// Mapeo completo proceso × material para reconstruir tablas reales.
+// Cada entrada apunta a una fila concreta del bloque del proceso en
+// la hoja "Costo" del Excel. Se usa para importar costos reales.
+// ─────────────────────────────────────────────────────────────────
+export const COSTO_MATERIAL_ROWS_FULL: Record<
+  number,
+  Array<{ row: number; material_codigo: string }>
+> = {
+  // ORD 1: Trituración
+  1: [
+    { row: 7, material_codigo: "ARCTLVTRIT" },
+    { row: 8, material_codigo: "CALTLVTRIT" },
+  ],
+  // ORD 2: Adiciones (caliza para adiciones)
+  2: [
+    { row: 18, material_codigo: "CALTLVTRIT" },
+  ],
+  // ORD 3: Molienda de Crudo (semielab Prehomo + caliza + mineral hierro)
+  3: [
+    { row: 28, material_codigo: "MEZCPREHO" },
+    { row: 29, material_codigo: "CALTLVTRIT" },
+    { row: 35, material_codigo: "CORRHIERR" },
+  ],
+  // ORD 4: Molienda de Carbón
+  4: [
+    { row: 40, material_codigo: "CARBITUMI" },
+  ],
+  // ORD 5: Clinkerización (semielab Harina + Carbón Molido + COMBALT)
+  5: [
+    { row: 62, material_codigo: "HARINACRUD" },
+    { row: 63, material_codigo: "CARBONMOL" },
+    { row: 64, material_codigo: "COMBALT" },
+  ],
+  // ORD 6: Cemento UG
+  6: [
+    { row: 78, material_codigo: "CLINKER001" },
+    { row: 79, material_codigo: "CALIZATRI" },
+    { row: 80, material_codigo: "ADIT_MOL" },
+    { row: 81, material_codigo: "PUZOLANA" },
+    { row: 82, material_codigo: "FINOS_FILT" },
+    { row: 89, material_codigo: "YESO00001" },
+  ],
+  // ORD 7: Cemento ART
+  7: [
+    { row: 94,  material_codigo: "CLINKER001" },
+    { row: 95,  material_codigo: "CALIZATRI" },
+    { row: 96,  material_codigo: "ADIT_MOL" },
+    { row: 97,  material_codigo: "PUZOLANA" },
+    { row: 98,  material_codigo: "FINOS_FILT" },
+    { row: 105, material_codigo: "YESO00001" },
+  ],
+  // ORD 8: Empaque UG 50 kg
+  8: [
+    { row: 110, material_codigo: "CEM_UG" },
+    { row: 113, material_codigo: "SACO_50KG" },
+  ],
+  // ORD 9: Empaque UG 42,5 kg
+  9: [
+    { row: 118, material_codigo: "CEM_UG" },
+    { row: 121, material_codigo: "SACO_42_5KG" },
+  ],
+  // ORD 10: Empaque UG 25 kg
+  10: [
+    { row: 126, material_codigo: "CEM_UG" },
+    { row: 129, material_codigo: "SACO_25KG" },
+  ],
+  // ORD 11: Empaque ART 42,5 kg
+  11: [
+    { row: 134, material_codigo: "CEM_ART" },
+    { row: 137, material_codigo: "SACO_42_5KG" },
+  ],
+  // ORD 14: Empaque Topex 50 kg
+  14: [
+    { row: 142, material_codigo: "CEM_TOPEX" },
+    { row: 145, material_codigo: "SACO_50KG" },
+  ],
+  // ORD 16: Fibrocemento
+  16: [
+    { row: 159, material_codigo: "CLINKER001" },
+    { row: 160, material_codigo: "CALIZATRI" },
+    { row: 161, material_codigo: "FINOS_FILT" },
+    { row: 166, material_codigo: "YESO00001" },
+  ],
+  // ORD 20: Combustibles Alternos
+  20: [
+    { row: 49, material_codigo: "CDR" },
+    { row: 50, material_codigo: "TDF" },
+    { row: 53, material_codigo: "BRIQUETAS" },
+  ],
+};
