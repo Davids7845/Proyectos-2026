@@ -1,4 +1,5 @@
 // Sub-navegación compartida para la sección /datos de una versión.
+import { createClient } from "@/lib/supabase/server";
 
 export default async function DatosLayout({
   children,
@@ -8,9 +9,17 @@ export default async function DatosLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const supabase = await createClient();
+  const { data: version } = await supabase
+    .from("budget_versions")
+    .select("precios_fijos")
+    .eq("id", id)
+    .single();
+  const preciosFijos = Boolean((version as { precios_fijos?: boolean } | null)?.precios_fijos);
 
   const tabs = [
     { href: `/versiones/${id}/datos/precios`,        label: "Precios" },
+    ...(preciosFijos ? [{ href: `/versiones/${id}/datos/precios-fijos`, label: "Precios Fijos" }] : []),
     { href: `/versiones/${id}/datos/recetas`,        label: "Recetas" },
     { href: `/versiones/${id}/datos/rendimientos`,   label: "Rendimientos" },
     { href: `/versiones/${id}/datos/ventas`,         label: "Ventas" },

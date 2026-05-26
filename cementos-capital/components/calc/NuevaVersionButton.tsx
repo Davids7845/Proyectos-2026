@@ -9,6 +9,7 @@ export default function NuevaVersionButton() {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [sapEnabled, setSapEnabled] = useState(false);
+  const [preciosFijos, setPreciosFijos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function NuevaVersionButton() {
       descripcion: descripcion.trim() || null,
       estado: "borrador",
       sap_enabled: sapEnabled,
-      precios_fijos: false,
+      precios_fijos: preciosFijos,
       periodo_inicio: "2025-09-01",
       periodo_fin: "2026-08-01",
       creado_por: user?.id ?? null,
@@ -105,6 +106,20 @@ export default function NuevaVersionButton() {
             />
             <label htmlFor="sap" className="text-sm text-gray-700">
               Modo SAP habilitado
+            </label>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              id="precios-fijos"
+              checked={preciosFijos}
+              onChange={(e) => setPreciosFijos(e.target.checked)}
+              className="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded"
+            />
+            <label htmlFor="precios-fijos" className="text-sm text-gray-700">
+              Modo Sin Consolidar
+              <span className="block text-xs text-gray-500">Usar precios fijos para Prehomo y Caliza Triturada</span>
             </label>
           </div>
 

@@ -48,6 +48,43 @@ export class Ord01Trituracion implements ProcesoCalculator {
   }): Promise<ProcesoResult> {
     const { ctx, proceso, periodo, writer } = args;
 
+    // ─── Fase 2b: Modo "Sin Consolidar" ─────────────────────────────
+    // Si version.precios_fijos=true y hay override para este proceso×periodo,
+    // saltar el cálculo de receta y usar el precio fijo. Reproduce la hoja
+    // "Costo sin Consolidar" del Excel original.
+    const precioFijo = ctx.preciosFijos
+      ? ctx.preciosFijosByKey?.get(`${proceso.id}|${periodo}`)
+      : undefined;
+    if (precioFijo != null) {
+      const fijoId = await writer.log({
+        calculo_tipo: "costo_proceso_total",
+        proceso_id: proceso.id,
+        periodo,
+        concepto: `Costo total proceso (precio fijo) — ${proceso.nombre}`,
+        valor_resultado: precioFijo,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_PROCESO_SUMA_v1",
+        formula_expresion: `precio_fijo=${precioFijo} (Modo Sin Consolidar)`,
+        parametros_entrada: { precio_fijo: precioFijo, modo: "sin_consolidar" },
+        nivel_jerarquia: 0,
+      });
+      return {
+        proceso_id: proceso.id,
+        periodo,
+        costo_materia_prima: precioFijo,
+        costo_combustible:   null,
+        costo_energia:       null,
+        costo_repuestos:     null,
+        costo_servicios:     null,
+        costo_total:    precioFijo,
+        costo_por_ton:  precioFijo,
+        costo_recibido_arrastre:  0,
+        costo_total_arrastrado:   precioFijo,
+        costo_por_ton_arrastrado: precioFijo,
+        calc_total_id: fijoId,
+      };
+    }
+
     const matCaliza  = ctx.materialesByCodigo.get(CODIGO_CALIZA);
     const matArcilla = ctx.materialesByCodigo.get(CODIGO_ARCILLA);
     if (!matCaliza || !matArcilla) {

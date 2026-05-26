@@ -272,6 +272,8 @@ async function loadContext(
     { data: cfRaw,   error: cfErr },
     { data: eoRaw,   error: eoErr },
     { data: mpRaw,   error: mpErr },
+    { data: versionRow, error: versionErr },
+    { data: pfRaw,   error: pfErr },
   ] = await Promise.all([
     supabase.from("procesos").select("id, ord, material, nombre, orden_topologico").eq("activo", true),
     supabase.from("materiales").select("id, codigo, nombre, unidad_base").eq("activo", true),
@@ -285,6 +287,8 @@ async function loadContext(
     sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
     sb.from("energia_overrides").select("proceso_id, periodo, kwh_ton, precio_efectivo").eq("version_id", versionId),
     sb.from("mp_overrides").select("proceso_id, material_codigo, periodo, consumo_ton_ton, precio_cop_ton").eq("version_id", versionId),
+    sb.from("budget_versions").select("precios_fijos").eq("id", versionId).single(),
+    sb.from("precios_fijos_overrides").select("proceso_id, periodo, precio_cop_ton").eq("version_id", versionId),
   ]);
 
   if (procErr) throw new Error(`procesos: ${procErr.message}`);
@@ -298,6 +302,15 @@ async function loadContext(
   if (cfErr && !cfErr.message?.includes("does not exist")) throw new Error(`costos_fijos_proceso: ${cfErr.message}`);
   if (eoErr && !eoErr.message?.includes("does not exist")) throw new Error(`energia_overrides: ${eoErr.message}`);
   if (mpErr && !mpErr.message?.includes("does not exist")) throw new Error(`mp_overrides: ${mpErr.message}`);
+  // precios_fijos: budget_versions row es opcional en tests (FakeSupabase puede no tenerlo)
+  if (versionErr && !versionErr.message?.includes("does not exist") && versionErr.code !== "PGRST116") {
+    // PGRST116 = no rows found; tratamos como precios_fijos=false
+    // any other error is real
+    if (!versionErr.message?.includes("Could not find")) {
+      throw new Error(`budget_versions: ${versionErr.message}`);
+    }
+  }
+  if (pfErr && !pfErr.message?.includes("does not exist")) throw new Error(`precios_fijos_overrides: ${pfErr.message}`);
 
   const materialesById = new Map<UUID, MaterialMeta>();
   const materialesByCodigo = new Map<string, MaterialMeta>();
@@ -429,6 +442,13 @@ async function loadContext(
     if (mp.precio_cop_ton  != null) precioMpOverrideByKey.set(k, Number(mp.precio_cop_ton));
   }
 
+  // Fase 2b: precios fijos por proceso × periodo
+  const preciosFijos = Boolean((versionRow as { precios_fijos?: boolean } | null)?.precios_fijos);
+  const preciosFijosByKey = new Map<string, number>();
+  for (const pf of pfRaw ?? []) {
+    preciosFijosByKey.set(`${pf.proceso_id}|${pf.periodo}`, Number(pf.precio_cop_ton));
+  }
+
   return {
     versionId,
     runId,
@@ -447,5 +467,7 @@ async function loadContext(
     energiaOverrideByKey,
     consumoOverrideByKey,
     precioMpOverrideByKey,
+    preciosFijos,
+    preciosFijosByKey,
   };
 }

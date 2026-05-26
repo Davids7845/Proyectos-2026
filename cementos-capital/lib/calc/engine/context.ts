@@ -124,6 +124,12 @@ export interface CalcContext {
   // usar el precio "arrastrado" del Excel Costo!O en vez del precio Datos.
   // key: `${proceso_id}|${material_codigo}|${periodo}` → COP/Ton
   precioMpOverrideByKey?: Map<string, number>;
+  // Fase 2b: modo "Sin Consolidar" — si true, los procesos consolidables
+  // (ORD 1 Prehomo, ORD 2 Caliza Triturada) usan precios fijos en lugar de
+  // recalcular la receta. Los valores vienen de `precios_fijos_overrides`.
+  preciosFijos?: boolean;
+  // key: `${proceso_id}|${periodo}` → COP/Ton fijo
+  preciosFijosByKey?: Map<string, number>;
 }
 
 // ─────────────────────────────────────────────────────────────────
