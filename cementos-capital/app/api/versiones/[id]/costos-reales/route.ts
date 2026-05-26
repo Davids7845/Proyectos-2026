@@ -73,3 +73,32 @@ export async function POST(
     report,
   });
 }
+
+// DELETE /api/versiones/[id]/costos-reales?periodo=YYYY-MM
+// Borra todas las filas de costos_reales para esa versión × período.
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: versionId } = await params;
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "no autenticado" }, { status: 401 });
+
+  const sp = req.nextUrl.searchParams;
+  const periodoRaw = sp.get("periodo");
+  if (!periodoRaw)
+    return NextResponse.json({ error: "falta query param 'periodo'" }, { status: 400 });
+  const periodo = /^\d{4}-\d{2}$/.test(periodoRaw) ? `${periodoRaw}-01` : periodoRaw;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error, count } = await (supabase as any)
+    .from("costos_reales")
+    .delete({ count: "exact" })
+    .eq("version_id", versionId)
+    .eq("periodo", periodo);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ periodo, filas_borradas: count ?? 0 });
+}

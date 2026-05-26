@@ -49,15 +49,24 @@ export default async function DesviacionesPage({ params, searchParams }: PagePro
     .single();
   if (!version) notFound();
 
-  // Períodos con datos reales
+  // Períodos con datos reales (+ origen agregado por período)
   const { data: periodosReales } = await (supabase as any)
     .from("costos_reales")
-    .select("periodo")
+    .select("periodo, origen")
     .eq("version_id", id);
 
   const periodosSet: string[] = Array.from(
     new Set(((periodosReales ?? []) as any[]).map((r: any) => r.periodo as string))
   ).sort();
+
+  // Origen por período: si todas las filas son del mismo origen → 'excel' | 'calc';
+  // si hay mezcla → 'mixto'. (Tras los fixes idempotentes esto no debería ocurrir.)
+  const origenByPeriodo = new Map<string, "excel" | "calc" | "mixto">();
+  for (const r of (periodosReales ?? []) as Array<{ periodo: string; origen: string }>) {
+    const cur = origenByPeriodo.get(r.periodo);
+    if (!cur) origenByPeriodo.set(r.periodo, r.origen as "excel" | "calc");
+    else if (cur !== r.origen) origenByPeriodo.set(r.periodo, "mixto");
+  }
 
   const años = Array.from(new Set(periodosSet.map(p => Number(p.slice(0, 4))))).sort();
   const meses = Array.from(
@@ -188,6 +197,10 @@ export default async function DesviacionesPage({ params, searchParams }: PagePro
             id: r.id,
             iniciado_en: r.iniciado_en,
             total_calculos: r.total_calculos ?? 0,
+          }))}
+          periodosCargados={periodosSet.map(p => ({
+            periodo: p,
+            origen: origenByPeriodo.get(p) ?? "excel",
           }))}
           currentAño={filterAño}
           currentMes={filterMes}

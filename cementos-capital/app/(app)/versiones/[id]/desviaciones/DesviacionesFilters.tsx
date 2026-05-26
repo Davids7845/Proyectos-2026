@@ -9,10 +9,16 @@ interface RunInfo {
   total_calculos: number;
 }
 
+interface PeriodoCargado {
+  periodo: string;                    // "YYYY-MM-DD"
+  origen: "excel" | "calc" | "mixto";
+}
+
 interface Props {
   años: number[];
   meses: { value: string; label: string }[];
   runs: RunInfo[];
+  periodosCargados: PeriodoCargado[];
   currentAño: string;
   currentMes: string;
   versionId: string;
@@ -25,7 +31,7 @@ const MES_LABEL: Record<string, string> = {
 };
 
 export default function DesviacionesFilters({
-  años, meses, runs, currentAño, currentMes, versionId,
+  años, meses, runs, periodosCargados, currentAño, currentMes, versionId,
 }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -80,6 +86,25 @@ export default function DesviacionesFilters({
     }
   }
 
+  async function handleDelete(periodoIso: string) {
+    const yyyymm = periodoIso.slice(0, 7);
+    if (!confirm(`¿Borrar todos los costos reales del período ${yyyymm}?`)) return;
+    try {
+      const res = await fetch(
+        `/api/versiones/${versionId}/costos-reales?periodo=${yyyymm}`,
+        { method: "DELETE" }
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        alert(`Error: ${json.error ?? res.statusText}`);
+      } else {
+        startTransition(() => router.refresh());
+      }
+    } catch (e) {
+      alert(`Error de red: ${String(e)}`);
+    }
+  }
+
   async function handleCopyFromCalc() {
     const runId = runRef.current?.value;
     const periodoVal = runPeriodoRef.current?.value || undefined;
@@ -114,8 +139,45 @@ export default function DesviacionesFilters({
     }
   }
 
+  const origenBadge = (o: "excel" | "calc" | "mixto") => {
+    const base = "ml-1 text-[10px] px-1 py-0.5 rounded uppercase font-semibold";
+    if (o === "excel") return `${base} bg-blue-100   text-blue-700`;
+    if (o === "calc")  return `${base} bg-indigo-100 text-indigo-700`;
+    return                   `${base} bg-amber-100  text-amber-700`;
+  };
+
   return (
     <div className="flex flex-col gap-3">
+      {/* Chips de períodos cargados */}
+      {periodosCargados.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-gray-500">Reales cargados:</span>
+          {periodosCargados.map(p => {
+            const yyyymm = p.periodo.slice(0, 7);
+            const m = p.periodo.slice(5, 7);
+            const a = p.periodo.slice(0, 4);
+            return (
+              <span
+                key={p.periodo}
+                className="inline-flex items-center bg-gray-100 border border-gray-200 rounded px-2 py-0.5"
+                title={`Origen: ${p.origen}`}
+              >
+                <span className="text-gray-700">{MES_LABEL[m]?.slice(0,3)} {a}</span>
+                <span className={origenBadge(p.origen)}>{p.origen}</span>
+                <button
+                  onClick={() => handleDelete(yyyymm)}
+                  className="ml-2 text-gray-400 hover:text-red-600 text-sm leading-none"
+                  title={`Borrar reales de ${yyyymm}`}
+                  aria-label={`Borrar ${yyyymm}`}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Filtros período */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm text-gray-500">Período:</span>
