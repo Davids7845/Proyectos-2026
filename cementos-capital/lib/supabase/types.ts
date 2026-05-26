@@ -622,10 +622,16 @@ export type Database = {
       }
       movimientos_contables: {
         Row: {
+          arrastre_a: string | null
           calc_id: string | null
           cantidad: number | null
           centro_costo: string | null
           clase_costo_id: string | null
+          clasificacion: string | null
+          concatenado: string | null
+          denominacion_clase_contrapartida: string | null
+          fecha_contabilizacion: string | null
+          fecha_documento: string | null
           id: string
           material_id: string | null
           orden_sap: string | null
@@ -633,6 +639,7 @@ export type Database = {
           proceso_id: string | null
           run_id: string | null
           texto_breve: string | null
+          tipo_insumo: string | null
           tipo_movimiento: string | null
           traslado_desde: string | null
           traslado_hasta: string | null
@@ -641,10 +648,16 @@ export type Database = {
           version_id: string
         }
         Insert: {
+          arrastre_a?: string | null
           calc_id?: string | null
           cantidad?: number | null
           centro_costo?: string | null
           clase_costo_id?: string | null
+          clasificacion?: string | null
+          concatenado?: string | null
+          denominacion_clase_contrapartida?: string | null
+          fecha_contabilizacion?: string | null
+          fecha_documento?: string | null
           id?: string
           material_id?: string | null
           orden_sap?: string | null
@@ -652,6 +665,7 @@ export type Database = {
           proceso_id?: string | null
           run_id?: string | null
           texto_breve?: string | null
+          tipo_insumo?: string | null
           tipo_movimiento?: string | null
           traslado_desde?: string | null
           traslado_hasta?: string | null
@@ -660,10 +674,16 @@ export type Database = {
           version_id: string
         }
         Update: {
+          arrastre_a?: string | null
           calc_id?: string | null
           cantidad?: number | null
           centro_costo?: string | null
           clase_costo_id?: string | null
+          clasificacion?: string | null
+          concatenado?: string | null
+          denominacion_clase_contrapartida?: string | null
+          fecha_contabilizacion?: string | null
+          fecha_documento?: string | null
           id?: string
           material_id?: string | null
           orden_sap?: string | null
@@ -671,6 +691,7 @@ export type Database = {
           proceso_id?: string | null
           run_id?: string | null
           texto_breve?: string | null
+          tipo_insumo?: string | null
           tipo_movimiento?: string | null
           traslado_desde?: string | null
           traslado_hasta?: string | null
@@ -1222,7 +1243,36 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_movimientos_base: {
+        Row: {
+          id: string | null
+          version_id: string | null
+          run_id: string | null
+          periodo: string | null
+          tipo_movimiento: string | null
+          clase_costo_codigo: string | null
+          clase_costo_denom: string | null
+          valor_monetario: number | null
+          cantidad: number | null
+          unidad: string | null
+          denominacion_clase_contrapartida: string | null
+          cuenta_contrapartida: string | null
+          centro_costo: string | null
+          material_codigo: string | null
+          material_nombre: string | null
+          orden_sap: string | null
+          fecha_contabilizacion: string | null
+          fecha_documento: string | null
+          clasificacion: string | null
+          proceso_nombre: string | null
+          ord: number | null
+          concatenado: string | null
+          tipo_insumo: string | null
+          arrastre_a: string | null
+          calc_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

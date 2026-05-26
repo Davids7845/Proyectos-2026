@@ -108,6 +108,14 @@ export default async function VersionOverviewPage({
           >
             Dashboard
           </Link>
+          {version.sap_enabled && (
+            <Link
+              href={`/versiones/${id}/base`}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Base SAP
+            </Link>
+          )}
           <Link
             href={`/versiones/${id}/datos/precios`}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"

@@ -139,7 +139,12 @@ export default async function CostoPivotPage({
                   <tr key={f.proceso_id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-900 sticky left-0 bg-white z-10 group-hover:bg-gray-50">
                       <span className="text-xs text-gray-400 mr-2">{f.ord}</span>
-                      {f.nombre}
+                      <Link
+                        href={`/versiones/${id}/costo/proceso/${f.ord}`}
+                        className="hover:text-blue-700 hover:underline"
+                      >
+                        {f.nombre}
+                      </Link>
                     </td>
                     {periodos.map(per => {
                       const cell = f.byPeriodo.get(per);

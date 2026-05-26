@@ -225,6 +225,96 @@ export async function POST(
   shResumen.getColumn(1).width = 22;
   shResumen.getColumn(2).width = 36;
 
+  // ─── Hoja 5: Desglose por proceso ────────────────────────────────────────
+  const { data: logRows } = await supabase
+    .from("calculation_log")
+    .select("calculo_tipo, proceso_id, material_id, periodo, valor_resultado, concepto, parametros_entrada")
+    .eq("run_id", lastRun.id)
+    .in("calculo_tipo", [
+      "precio_componente_directo", "precio_componente_derivado",
+      "costo_energia_proceso", "costo_componente_derivado_termico", "costo_fijo_proceso",
+    ]);
+
+  // Cargar recetas para pct
+  const { data: recetasEx } = await supabase
+    .from("recetas")
+    .select("proceso_id, periodo, receta_lineas(material_id, porcentaje)")
+    .eq("version_id", versionId);
+  const pctMapEx = new Map<string, number>();
+  for (const r of recetasEx ?? []) {
+    for (const ln of (r as any).receta_lineas ?? []) {
+      pctMapEx.set(`${r.proceso_id}|${ln.material_id}|${r.periodo}`, Number(ln.porcentaje));
+    }
+  }
+
+  // Materiales para nombres
+  const matIdsEx = Array.from(new Set((logRows ?? []).map(r => r.material_id).filter(Boolean))) as string[];
+  const { data: matsEx } = matIdsEx.length > 0
+    ? await supabase.from("materiales").select("id, nombre").in("id", matIdsEx)
+    : { data: [] };
+  const matNombreEx = new Map<string, string>();
+  for (const m of matsEx ?? []) matNombreEx.set(m.id, m.nombre);
+
+  const shDesglose = wb.addWorksheet("Desglose por Proceso");
+  shDesglose.getRow(1).values = [
+    "Proceso", "ORD", "Período", "Concepto", "Tipo", "Consumo", "Precio Unit", "Costo/Ton",
+  ];
+  shDesglose.getRow(1).font = { bold: true };
+  shDesglose.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  [34, 6, 10, 30, 14, 12, 16, 14].forEach((w, i) => {
+    shDesglose.getColumn(i + 1).width = w;
+  });
+
+  let dsRow = 2;
+  for (const log of (logRows ?? []) as any[]) {
+    const proc = procesoMeta.get(log.proceso_id ?? "");
+    const params = log.parametros_entrada as Record<string, unknown> ?? {};
+    let concepto = "";
+    let consumo: number | null = null;
+    let precioUnit: number | null = null;
+    let costoTon = Number(log.valor_resultado);
+    let tipo = "";
+
+    if (log.calculo_tipo === "precio_componente_directo" || log.calculo_tipo === "precio_componente_derivado") {
+      concepto = log.material_id ? (matNombreEx.get(log.material_id) ?? log.material_id) : log.concepto;
+      const pct = log.material_id ? (pctMapEx.get(`${log.proceso_id}|${log.material_id}|${log.periodo}`) ?? null) : null;
+      consumo = pct;
+      precioUnit = costoTon;
+      costoTon = pct != null ? costoTon * pct : 0;
+      tipo = "mp";
+    } else if (log.calculo_tipo === "costo_energia_proceso") {
+      concepto = "Energía Eléctrica";
+      consumo = Number(params.kwh_ton ?? 0) || null;
+      precioUnit = consumo && consumo > 0 ? costoTon / consumo : null;
+      tipo = "energia";
+    } else if (log.calculo_tipo === "costo_componente_derivado_termico") {
+      concepto = log.material_id ? (matNombreEx.get(log.material_id) ?? log.concepto) : log.concepto;
+      consumo = Number(params.consumo ?? 0) || null;
+      precioUnit = Number(params.precio_arrastrado ?? 0) || null;
+      tipo = "combustible";
+    } else if (log.calculo_tipo === "costo_fijo_proceso") {
+      concepto = String(params.codigo ?? log.concepto ?? "Costo fijo");
+      consumo = 1;
+      precioUnit = costoTon;
+      tipo = "fijo";
+    }
+
+    if (!concepto) continue;
+    const row = shDesglose.getRow(dsRow++);
+    row.getCell(1).value = proc?.nombre ?? log.proceso_id ?? "";
+    row.getCell(2).value = proc?.ord ?? null;
+    row.getCell(3).value = fmtPeriodo(log.periodo);
+    row.getCell(4).value = concepto;
+    row.getCell(5).value = tipo;
+    row.getCell(6).value = consumo;
+    if (consumo != null) { row.getCell(6).numFmt = "#,##0.0000"; row.getCell(6).alignment = { horizontal: "right" }; }
+    row.getCell(7).value = precioUnit;
+    if (precioUnit != null) { row.getCell(7).numFmt = "#,##0"; row.getCell(7).alignment = { horizontal: "right" }; }
+    row.getCell(8).value = costoTon || null;
+    row.getCell(8).numFmt = "#,##0.00";
+    row.getCell(8).alignment = { horizontal: "right" };
+  }
+
   // Serialize to buffer
   const buffer = await wb.xlsx.writeBuffer();
 

@@ -183,6 +183,26 @@ test('Flujo completo: login → importar → calcular → validar costos → tra
     const svgCount = await page.locator('svg').count();
     expect(svgCount, 'Se esperaban al menos 2 gráficos SVG').toBeGreaterThan(0);
   });
+
+  // === PASO 10: Cuadro detallado por proceso ===
+  await test.step('Cuadro detallado por proceso ORD5 muestra desglose', async () => {
+    await page.goto(`/versiones/${versionId}/costo/proceso/5`);
+    await expect(page.locator('h1').first()).toBeVisible({ timeout: 10_000 });
+    // La tabla debe tener al menos 3 filas de componentes
+    await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
+    const rowCount = await page.locator('tbody tr').count();
+    expect(rowCount, `Se esperaban ≥3 filas en detalle ORD5, encontradas: ${rowCount}`).toBeGreaterThan(2);
+  });
+
+  // === PASO 11: Exportar Excel ===
+  await test.step('Exportar Excel descarga un archivo .xlsx', async () => {
+    await page.goto(`/versiones/${versionId}/costo`);
+    await expect(page.locator('table').first()).toBeVisible({ timeout: 10_000 });
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+    await page.getByRole('button', { name: /exportar.*excel/i }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename(), 'El archivo descargado debe ser .xlsx').toMatch(/\.xlsx$/i);
+  });
 });
 
 // ─── Utilidad numérica ─────────────────────────────────────────────────────
