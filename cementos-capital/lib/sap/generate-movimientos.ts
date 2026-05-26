@@ -10,6 +10,46 @@ const SEMIELABORADO_PRODUCTOR_ORD: Record<string, number> = {
   CLINKER001: 5,   // Clinker        → ORD5 Clinkerización
 };
 
+// Mapeo de códigos de costo fijo (parametros_entrada.codigo emitido por
+// `costo_fijo_proceso`) → clase_costo.codigo. Estos códigos vienen del
+// archivo Excel "Costo" (filas de repuestos / servicios / regalías por
+// proceso) y NO tienen material_id, por eso no se resuelven vía maestro_sap.
+// Fase 3 Sesión 1 — cierre de huérfanos.
+const FIJO_CLASE_BY_CODIGO: Record<string, string> = {
+  // ORD 1 — Trituración
+  BARRAS_PLAC_TRIT:  "7355250320",
+  MAT_DIQUE:         "7355250321",
+  DESMANT_TRIT:      "7495700001",
+  REGALIAS:          "7495700001",
+  // ORD 3 — Molienda de Crudo
+  CUERPOS_MOL_CR:    "7355250320",
+  LAMINAS_CR:        "7355250321",
+  ANILLOS_TAPAS_CR:  "7355250322",
+  // ORD 4 — Molienda de Carbón
+  DESCARGUE_FINOS_C: "7355250321",
+  CARGADOR_CARBON:   "7355250325",
+  CUERPOS_MOL_C:     "7355250320",
+  // ORD 5 — Clinkerización
+  DUCTOS_CK:         "7355250320",
+  CARGUE_CK:         "7355250324",
+  SELLADO_CK:        "7355250323",
+  ENFRIADOR_CK:      "7355250321",
+  CARGUE_CK_TOLVA:   "7355250325",
+  GASOIL_CK:         "7355050105",
+  PLACAS_CK:         "7355250322",
+  REFRACTARIOS_CK:   "7355300105",
+  // ORD 6 — Cemento UG
+  CUERPOS_MOL_UG:    "7355250320",
+  PLACAS_SEG_UG:     "7355250320",
+  // ORD 7 — Cemento ART
+  CUERPOS_MOL_ART:   "7355250320",
+  PLACAS_SEG_ART:    "7355250320",
+  // ORD 16 — Fibrocemento
+  CUERPOS_MOL_FIB:   "7355250320",
+  PLACAS_SEG_FIB:    "7355250320",
+  GASOIL_FIB:        "7355050105",
+};
+
 // Calculo tipos que representan componentes individuales (excluye agregados)
 const TIPOS_COMPONENTE = [
   "precio_componente_directo",
@@ -316,14 +356,16 @@ export async function generateMovimientos(
       const valorTotal = log.valor_resultado * produccion;
       const codigo = String(log.parametros_entrada.codigo ?? "");
 
-      // Lookup clase de costo por código del item fijo si está en maestro
-      const sapEntry = sapMap.get(`|${log.proceso_id}`) ?? sapMap.get(`${log.material_id ?? ""}|${log.proceso_id}`);
+      // Resolver clase_costo por el código del item fijo (Fase 3 Sesión 1).
+      // Antes: lookup vía maestro_sap con material_id=null → siempre null.
+      const claseCodigo = FIJO_CLASE_BY_CODIGO[codigo];
+      const claseCostoId = claseCodigo ? clasesByCodigo.get(claseCodigo) ?? null : null;
 
       movimientos.push({
         version_id:     opts.versionId,
         run_id:         opts.runId,
         periodo:        log.periodo,
-        clase_costo_id: sapEntry?.clase_costo_id ?? null,
+        clase_costo_id: claseCostoId,
         material_id:    log.material_id ?? null,
         proceso_id:     log.proceso_id,
         centro_costo:   centroCosto,
@@ -336,6 +378,7 @@ export async function generateMovimientos(
         calc_id:         log.id,
         fecha_contabilizacion: fechaDoc,
         fecha_documento:       fechaDoc,
+        denominacion_clase_contrapartida: claseCostoId ? clasesDenomById.get(claseCostoId) ?? null : null,
       });
     }
   }

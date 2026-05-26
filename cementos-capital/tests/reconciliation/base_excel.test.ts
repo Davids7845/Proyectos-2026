@@ -396,24 +396,36 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
     },
   );
 
-  // ── No deben existir movimientos entrada/MP con clase_costo_id nulo ────────
-  // (costo_fijo_proceso sin material_id queda fuera del filtro; la prueba
-  //  cubre únicamente entradas con material conocido, donde maestro_sap
-  //  debe proveer siempre una clase de costo)
-  it("no hay movimientos entrada MP con clase_costo_id nulo", () => {
+  // ── No deben existir movimientos entrada con clase_costo_id nulo ──────────
+  // Cubre tanto MP (vía maestro_sap) como costos fijos (vía FIJO_CLASE_BY_CODIGO).
+  // Fase 3 Sesión 1: cerró los huérfanos de costo_fijo_proceso que antes
+  //                  emitían clase_costo_id=null porque su lookup en maestro_sap
+  //                  fallaba (material_id=null no estaba indexado).
+  it("no hay movimientos entrada con clase_costo_id nulo", () => {
     const nullClase = db.tables["movimientos_contables"].filter(
       m =>
         m["tipo_movimiento"] === "entrada" &&
-        m["material_id"] != null &&
         m["clase_costo_id"] == null,
     );
     if (nullClase.length > 0) {
-      console.log("[NULL clase] ejemplos:", nullClase.slice(0, 3).map(m => ({
-        material_id: m["material_id"],
-        proceso_id:  m["proceso_id"],
-        calculo_tipo: m["calculo_tipo"],
+      console.log("[NULL clase] ejemplos:", nullClase.slice(0, 5).map(m => ({
+        material_id:  m["material_id"],
+        proceso_id:   m["proceso_id"],
+        tipo_insumo:  m["tipo_insumo"],
+        valor:        m["valor_monetario"],
       })));
     }
     expect(nullClase.length).toBe(0);
+  });
+
+  // ── Cobertura: deben generarse movimientos de costos fijos clasificados ────
+  it("costos fijos generan movimientos con clase_costo asignada", () => {
+    const fijos = db.tables["movimientos_contables"].filter(
+      m => m["clasificacion"] === "FIJO",
+    );
+    expect(fijos.length, "debe haber al menos 1 movimiento de costo fijo").toBeGreaterThan(0);
+    for (const f of fijos) {
+      expect(f["clase_costo_id"], `fijo ${f["tipo_insumo"]} sin clase_costo`).not.toBeNull();
+    }
   });
 });
