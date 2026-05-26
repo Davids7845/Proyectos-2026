@@ -117,6 +117,12 @@ export default async function VersionOverviewPage({
             </Link>
           )}
           <Link
+            href={`/versiones/${id}/desviaciones`}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Desviaciones
+          </Link>
+          <Link
             href={`/versiones/${id}/datos/precios`}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
           >
