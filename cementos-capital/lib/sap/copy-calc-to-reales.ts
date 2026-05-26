@@ -157,22 +157,22 @@ export async function copyCalcToReales(
     });
   }
 
-  // 5. Idempotencia: borrar filas previas (origen='calc') del mismo
-  //    (version, periodo) y reinsertar.
-  let delQuery = supabase
-    .from("costos_reales")
-    .delete()
-    .eq("version_id", opts.versionId)
-    .eq("origen", "calc");
-  if (opts.periodo) delQuery = delQuery.eq("periodo", opts.periodo);
-  const { error: delErr } = await delQuery;
-  if (delErr) {
-    report.errores.push(`delete previo: ${delErr.message}`);
+  if (rows.length === 0) {
+    report.errores.push("Sin filas a insertar (verifica que el run tenga producción registrada)");
     return report;
   }
 
-  if (rows.length === 0) {
-    report.errores.push("Sin filas a insertar (verifica que el run tenga producción registrada)");
+  // 5. Idempotencia: borrar TODAS las filas (excel + calc) de los períodos
+  //    afectados. Cargar 'calc' reemplaza por completo el período, como
+  //    lo hace el loader de Excel.
+  const periodosArr = Array.from(periodosSet);
+  const { error: delErr } = await supabase
+    .from("costos_reales")
+    .delete()
+    .eq("version_id", opts.versionId)
+    .in("periodo", periodosArr);
+  if (delErr) {
+    report.errores.push(`delete previo: ${delErr.message}`);
     return report;
   }
 
