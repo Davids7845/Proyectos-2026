@@ -43,7 +43,8 @@ import { Ord20CombustiblesAlternos }   from "@/lib/calc/procesos/ord20_combustib
 import { Ord21Cementos }               from "@/lib/calc/procesos/ord21_cementos";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
-const CALCULADORES: Record<number, ProcesoCalculator> = {
+// Exportado para uso desde motor efímero (sensibilidad, análisis what-if).
+export const CALCULADORES: Record<number, ProcesoCalculator> = {
    1: new Ord01Trituracion(),
    2: new Ord02Adiciones(),
    3: new Ord03MoliendaCrudo(),
@@ -210,7 +211,7 @@ export async function runCalculation(
 // Sembrar formula_definitions (upsert por codigo) — devuelve mapa codigo→id
 // ─────────────────────────────────────────────────────────────────
 
-async function ensureFormulas(supabase: Client): Promise<Map<string, UUID>> {
+export async function ensureFormulas(supabase: Client): Promise<Map<string, UUID>> {
   const codigos = Object.keys(FORMULA_REGISTRY);
 
   // 1) Leer existentes
@@ -254,7 +255,7 @@ async function ensureFormulas(supabase: Client): Promise<Map<string, UUID>> {
 // Cargar contexto de cálculo desde Supabase
 // ─────────────────────────────────────────────────────────────────
 
-async function loadContext(
+export async function loadContext(
   supabase: Client,
   versionId: UUID,
   runId: UUID,
