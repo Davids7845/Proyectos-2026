@@ -139,7 +139,13 @@ export default function PreciosTable({ versionId, precios, materiales, periodos,
               return (
                 <tr key={r.rowKey} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2 font-medium text-gray-900 sticky left-0 bg-white z-10">
-                    {mat?.nombre ?? r.material_id}
+                    <a
+                      href={`/versiones/${versionId}/insumos/${r.material_id}/impacto`}
+                      className="hover:text-blue-700 hover:underline"
+                      title="Ver impacto en productos finales"
+                    >
+                      {mat?.nombre ?? r.material_id}
+                    </a>
                     {mat?.codigo && <span className="ml-1 text-xs text-gray-400 font-normal">{mat.codigo}</span>}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{r.proveedor ?? "—"}</td>
