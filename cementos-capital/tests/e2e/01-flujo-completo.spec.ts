@@ -205,7 +205,45 @@ test('Flujo completo: login → importar → calcular → validar costos → tra
     expect(hasTable || hasEmpty, 'Base SAP debe mostrar tabla o estado vacío').toBe(true);
   });
 
-  // === PASO 12: Exportar Excel ===
+  // === PASO 12: Sensibilidad ===
+  await test.step('Sensibilidad: cambiar precio de un insumo muestra impacto', async () => {
+    await page.goto(`/versiones/${versionId}/sensibilidad`);
+    await expect(page.locator('h1').filter({ hasText: /Sensibilidad/i })).toBeVisible({ timeout: 10_000 });
+    const input = page.locator('input[type="number"]').first();
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill('10');
+    await page.getByRole('button', { name: /calcular.*impacto/i }).click();
+    // El cálculo corre el motor 2x — puede tardar 30-50s
+    await expect(
+      page.locator('h2').filter({ hasText: /productos finales|Top 5 cambios/i }).first(),
+    ).toBeVisible({ timeout: 90_000 });
+  });
+
+  // === PASO 13: Trazabilidad hacia adelante (impacto de insumo) ===
+  await test.step('Impacto de insumo muestra aporte en productos finales', async () => {
+    await page.goto(`/versiones/${versionId}/datos/precios`);
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10_000 });
+    // Click en el nombre del primer material (es un enlace a /insumos/[id]/impacto)
+    const matLink = page.locator('table tbody tr a[href*="/insumos/"]').first();
+    await expect(matLink).toBeVisible({ timeout: 10_000 });
+    await matLink.click();
+    await page.waitForURL(/\/insumos\/[a-f0-9-]{36}\/impacto/, { timeout: 15_000 });
+    // La página debe mostrar bien la cabecera o el estado vacío
+    await expect(
+      page.locator('h1').first(),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  // === PASO 14: PDF Ejecutivo ===
+  await test.step('PDF ejecutivo se descarga desde dashboard', async () => {
+    await page.goto(`/versiones/${versionId}/dashboard`);
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+    await page.getByRole('link', { name: /descargar.*pdf/i }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename(), 'PDF descargado').toMatch(/\.pdf$/i);
+  });
+
+  // === PASO 15: Exportar Excel ===
   await test.step('Exportar Excel descarga un archivo .xlsx', async () => {
     await page.goto(`/versiones/${versionId}/costo`);
     await expect(page.locator('table').first()).toBeVisible({ timeout: 10_000 });
