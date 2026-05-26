@@ -22,7 +22,7 @@ interface WaterfallApiResponse {
 }
 
 export default function ComparePage() {
-  const { base_id, comparada_id } = useParams() as { base_id: string; comparada_id: string };
+  const { id: base_id, comparada_id } = useParams() as { id: string; comparada_id: string };
   const [data, setData] = useState<Record<string, WaterfallApiResponse | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export default function ComparePage() {
       <nav className="text-xs text-gray-500 mb-2">
         <Link href="/versiones" className="hover:underline">Versiones</Link>
         <span className="mx-1">/</span>
-        <Link href={`/versiones/${base_id}`} className="hover:underline">Versión base</Link>
+        <Link href={`/versiones/${base_id}`} className="hover:underline">{base_id}</Link>
         <span className="mx-1">/</span>
         <span className="text-gray-700">Comparativa</span>
       </nav>
