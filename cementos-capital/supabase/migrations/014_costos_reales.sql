@@ -46,6 +46,8 @@ create index if not exists idx_costos_reales_material
 
 alter table costos_reales enable row level security;
 
+drop policy if exists "costos_reales read auth"  on costos_reales;
+drop policy if exists "costos_reales write auth" on costos_reales;
 create policy "costos_reales read auth" on costos_reales
   for select to authenticated using (true);
 create policy "costos_reales write auth" on costos_reales
@@ -92,7 +94,7 @@ with ppto_abs as (
     on r.version_id = p.version_id
    and r.periodo    = p.periodo
    and r.proceso_id = p.proceso_id
-), real as (
+), reales as (
   select
     r.version_id,
     r.periodo,
@@ -104,23 +106,23 @@ with ppto_abs as (
   group by r.version_id, r.periodo, r.proceso_id, r.material_id
 )
 select
-  coalesce(p.version_id, r.version_id) as version_id,
-  coalesce(p.periodo,    r.periodo)    as periodo,
-  coalesce(p.proceso_id, r.proceso_id) as proceso_id,
-  coalesce(p.material_id, r.material_id) as material_id,
+  coalesce(p.version_id,  reales.version_id)  as version_id,
+  coalesce(p.periodo,     reales.periodo)     as periodo,
+  coalesce(p.proceso_id,  reales.proceso_id)  as proceso_id,
+  coalesce(p.material_id, reales.material_id) as material_id,
   p.valor_ppto,
   p.cantidad_ppto,
-  r.valor_real,
-  r.cantidad_real,
-  (coalesce(r.valor_real,0) - coalesce(p.valor_ppto,0)) as delta_valor,
+  reales.valor_real,
+  reales.cantidad_real,
+  (coalesce(reales.valor_real, 0) - coalesce(p.valor_ppto, 0)) as delta_valor,
   case when p.valor_ppto is null or p.valor_ppto = 0 then null
-       else (coalesce(r.valor_real,0) - p.valor_ppto) / p.valor_ppto
+       else (coalesce(reales.valor_real, 0) - p.valor_ppto) / p.valor_ppto
   end as delta_pct
 from ppto p
-full outer join real r
-  on p.version_id = r.version_id
- and p.periodo    = r.periodo
- and p.proceso_id = r.proceso_id
- and p.material_id is not distinct from r.material_id;
+full outer join reales
+  on p.version_id  = reales.version_id
+ and p.periodo     = reales.periodo
+ and p.proceso_id  = reales.proceso_id
+ and p.material_id is not distinct from reales.material_id;
 
 grant select on v_desviaciones to authenticated;
