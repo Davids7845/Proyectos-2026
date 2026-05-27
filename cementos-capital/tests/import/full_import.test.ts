@@ -87,4 +87,15 @@ describe("Importer Excel real — 12 secciones", () => {
     const inv = parsed.inventarios.filter(i => i.campo === "inventario_final");
     expect(inv.length).toBeGreaterThan(0);
   });
+
+  it("Recetas Fibrocemento (ORD 16): extrae ≥ 8 líneas con producto_nombre 'Cemento Fibro'", () => {
+    const fibroRecetas = parsed.recetas.filter(r =>
+      r.producto_nombre?.toLowerCase().includes("fibro")
+    );
+    expect(fibroRecetas.length).toBeGreaterThanOrEqual(8);
+    const materiales = new Set(fibroRecetas.map(r => r.material_nombre?.toLowerCase()));
+    expect(materiales).toContain("clinker");
+    expect(materiales).toContain("yeso");
+    expect(materiales).toContain("puzolana");
+  });
 });

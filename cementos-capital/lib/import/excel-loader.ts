@@ -303,13 +303,14 @@ export async function loadParsedExcel(
     // Alias: nombre Excel abreviado → norm(procesos.material) para los casos que no
     // coinciden directamente (mismo patrón que build_context_from_excel.ts ALIASES).
     const RECETA_PROCESO_ALIASES: Record<string, string> = {
-      "prehomo":  "mezcla prehomo",
-      "crudo":    "harina cruda",
-      "carbon":   "carbon molido",
-      "carbón":   "carbon molido",
-      "clinker":  "clinker",
-      "alternos": "combustibles alternos",
+      "prehomo":       "mezcla prehomo",
+      "crudo":         "harina cruda",
+      "carbon":        "carbon molido",
+      "carbón":        "carbon molido",
+      "clinker":       "clinker",
+      "alternos":      "combustibles alternos",
       "cemento total": "cemento ug",
+      "cemento fibro": "fibrocemento",
     };
 
     const resolveRecetaProceso = (producto: string): string | null => {
@@ -338,8 +339,9 @@ export async function loadParsedExcel(
     // Override de producto cuando el alias por defecto apunta a un material distinto
     // del que el motor de cálculo espera (caso ORD20: "Alternos" → COMBALT, no CDR).
     const RECETA_PRODUCTO_OVERRIDES: Record<string, string> = {
-      "alternos": "COMBALT",
+      "alternos":            "COMBALT",
       "combustibles alternos": "COMBALT",
+      "cemento fibro":       "FIBROCEMENTO",
     };
 
     for (const lineas of Array.from(grupos.values())) {
@@ -450,6 +452,16 @@ export async function loadParsedExcel(
           "sal marina": "ADIT_MOL",
           "finos": "FINOS_FILT",
           "puzolana": "PUZOLANA",
+          "aditivo de molienda": "ADIT_MOL",
+        },
+        "cemento fibro":   {
+          "clinker": "CLINKER001",
+          "caliza": "CALIZATRI",
+          "yeso": "YESO00001",
+          "sal marina": "SAL_MARINA",
+          "finos": "FINOS_FILT",
+          "puzolana": "PUZOLANA",
+          "ric": "RIC",
           "aditivo de molienda": "ADIT_MOL",
         },
       };
