@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
   LineChart, Line,
 } from "recharts";
+import { BRAND } from "@/lib/ui/colors";
 
 interface BarDatum {
   nombre: string;
@@ -69,7 +70,7 @@ export default function CostosCharts({ barData, lineData }: Props) {
                 tick={{ fontSize: 11 }}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="costo" name="COP/Ton" fill="#3b82f6" radius={[0, 3, 3, 0]} />
+              <Bar dataKey="costo" name="COP/Ton" fill={BRAND.primary} radius={[0, 3, 3, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -103,7 +104,7 @@ export default function CostosCharts({ barData, lineData }: Props) {
                 type="monotone"
                 dataKey="ug"
                 name="Cemento UG"
-                stroke="#3b82f6"
+                stroke={BRAND.productos.ug}
                 dot={{ r: 3 }}
                 strokeWidth={2}
                 connectNulls
@@ -112,7 +113,7 @@ export default function CostosCharts({ barData, lineData }: Props) {
                 type="monotone"
                 dataKey="art"
                 name="Cemento ART"
-                stroke="#f59e0b"
+                stroke={BRAND.productos.art}
                 dot={{ r: 3 }}
                 strokeWidth={2}
                 connectNulls

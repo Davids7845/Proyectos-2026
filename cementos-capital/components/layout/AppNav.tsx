@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { BRAND } from "@/lib/ui/colors";
 
 interface AppNavProps {
   user: User;
@@ -27,11 +28,11 @@ export default function AppNav({ user }: AppNavProps) {
   ];
 
   return (
-    <header className="bg-white border-b border-gray-200 shadow-sm">
+    <header style={{ backgroundColor: BRAND.primary }} className="shadow-md">
       <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <span className="font-semibold text-gray-900 text-sm">
-            Cementos Capital — Presupuesto
+          <span className="font-bold text-white text-sm tracking-wide">
+            Cementos Alión — Presupuesto
           </span>
           <nav className="flex items-center gap-1">
             {navLinks.map((link) => (
@@ -40,8 +41,8 @@ export default function AppNav({ user }: AppNavProps) {
                 href={link.href}
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                   pathname.startsWith(link.match)
-                    ? "bg-blue-50 text-blue-700"
-                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                    ? "bg-white/20 text-white"
+                    : "text-blue-200 hover:text-white hover:bg-white/10"
                 }`}
               >
                 {link.label}
@@ -50,10 +51,10 @@ export default function AppNav({ user }: AppNavProps) {
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">{user.email}</span>
+          <span className="text-xs text-blue-200">{user.email}</span>
           <button
             onClick={handleLogout}
-            className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100"
+            className="text-xs text-blue-200 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
           >
             Salir
           </button>
