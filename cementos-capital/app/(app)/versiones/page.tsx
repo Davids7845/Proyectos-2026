@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import NuevaVersionButton from "@/components/calc/NuevaVersionButton";
+import CompareButton from "@/components/calc/CompareButton";
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
   borrador:    { label: "Borrador",    color: "bg-gray-100 text-gray-700" },
@@ -28,7 +29,12 @@ export default async function VersionesPage() {
             Septiembre 2025 – Agosto 2026
           </p>
         </div>
-        <NuevaVersionButton />
+        <div className="flex items-center gap-2">
+          {(versiones?.length ?? 0) >= 2 && (
+            <CompareButton versiones={(versiones ?? []).map(v => ({ id: v.id, nombre: v.nombre }))} />
+          )}
+          <NuevaVersionButton />
+        </div>
       </div>
 
       {error && (
