@@ -631,7 +631,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
   if (costoSheetName && periodos.length > 0) {
     const periodoPpto = derivePeriodoPpto(periodos);
     const cs = wb.Sheets[costoSheetName] as Record<string, { v?: unknown }>;
-    const parsed = parseCostoSheetCells(cs, periodoPpto);
+    const parsed = parseCostoSheetCells(cs, periodoPpto, periodos);
     costos_fijos = parsed.costos_fijos;
     energia_overrides = parsed.energia_overrides;
     mp_overrides = parsed.mp_overrides;
@@ -688,18 +688,22 @@ function toNum(v: unknown): number | null {
 function parseCostoSheetCells(
   cs: CostoSheet,
   periodoPpto: Periodo,
+  periodos: Periodo[] = [],
 ): { costos_fijos: CostoFijoParsed[]; energia_overrides: EnergiaOverrideParsed[]; mp_overrides: MpOverrideParsed[] } {
   const costos_fijos: CostoFijoParsed[] = [];
   const energia_overrides: EnergiaOverrideParsed[] = [];
   const mp_overrides: MpOverrideParsed[] = [];
 
-  // Costos fijos (col P = costo_por_ton presupuesto)
+  // Costos fijos (col P = costo_por_ton presupuesto): la tasa COP/Ton aplica a todos los periodos
+  const periodsForFijos = periodos.length > 0 ? periodos : [periodoPpto];
   for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_CONFIG)) {
     const ord = Number(ordStr);
     for (const it of items) {
       const v = toNum(getCostoCell(cs, COSTO_COL_PPTO, it.row));
       if (v != null) {
-        costos_fijos.push({ ord, codigo: it.codigo, nombre: it.nombre, periodo: periodoPpto, costo_por_ton: v, row_excel: it.row });
+        for (const periodo of periodsForFijos) {
+          costos_fijos.push({ ord, codigo: it.codigo, nombre: it.nombre, periodo, costo_por_ton: v, row_excel: it.row });
+        }
       }
     }
   }
