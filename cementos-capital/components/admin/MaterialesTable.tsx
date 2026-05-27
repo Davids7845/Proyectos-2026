@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Material {
   id: string;
@@ -27,9 +28,11 @@ const CATEGORIA_COLORS: Record<string, string> = {
 export default function MaterialesTable({
   materiales,
   categorias,
+  versionIdParaImpacto = null,
 }: {
   materiales: Material[];
   categorias: string[];
+  versionIdParaImpacto?: string | null;
 }) {
   const [filtro, setFiltro] = useState("");
   const [catFiltro, setCatFiltro] = useState("");
@@ -94,15 +97,16 @@ export default function MaterialesTable({
               <th className="px-4 py-2.5 text-left font-medium text-gray-600 w-32">Categoría</th>
               <th className="px-4 py-2.5 text-left font-medium text-gray-600 w-36">Tipo insumo</th>
               <th className="px-4 py-2.5 text-center font-medium text-gray-600 w-20">Activo</th>
+              <th className="px-4 py-2.5 text-left font-medium text-gray-600 w-28">Impacto</th>
             </tr>
           </thead>
           <tbody>
             {lista.map((m, i) => (
-              <MaterialRow key={m.id} material={m} even={i % 2 === 0} />
+              <MaterialRow key={m.id} material={m} even={i % 2 === 0} versionIdParaImpacto={versionIdParaImpacto} />
             ))}
             {lista.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
                   No hay materiales que coincidan con el filtro.
                 </td>
               </tr>
@@ -118,7 +122,7 @@ export default function MaterialesTable({
 
 // ─── Fila editable ───────────────────────────────────────────────────────────
 
-function MaterialRow({ material, even }: { material: Material; even: boolean }) {
+function MaterialRow({ material, even, versionIdParaImpacto }: { material: Material; even: boolean; versionIdParaImpacto: string | null }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [nombre, setNombre] = useState(material.nombre);
@@ -195,6 +199,19 @@ function MaterialRow({ material, even }: { material: Material; even: boolean }) 
             material.activo ? "translate-x-4" : "translate-x-0.5"
           }`} />
         </button>
+      </td>
+
+      <td className="px-4 py-2">
+        {versionIdParaImpacto ? (
+          <Link
+            href={`/versiones/${versionIdParaImpacto}/insumos/${material.id}/impacto`}
+            className="text-blue-600 hover:underline text-xs whitespace-nowrap"
+          >
+            Ver impacto →
+          </Link>
+        ) : (
+          <span className="text-xs text-gray-400">Sin versión calculada</span>
+        )}
       </td>
     </tr>
   );
