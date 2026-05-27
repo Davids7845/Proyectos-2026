@@ -1,9 +1,12 @@
 // Cuadro detallado por proceso — réplica de la hoja "Costo" del Excel para un ORD.
-// Muestra: Concepto | Consumo | Precio Unit | Costo/Ton | Costo Total (COP)
+// Hero card + tabla de aporte con barras + donut de composición.
 
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
+import DonutChart from "@/components/charts/DonutChart";
+import { BRAND, formatCOP, formatMes } from "@/lib/ui/colors";
 
 interface PageProps {
   params: Promise<{ id: string; ord: string }>;
@@ -20,7 +23,7 @@ interface ComponenteRow {
   tipo: string;
 }
 
-export default async function ProcesoDetalleePage({ params, searchParams }: PageProps) {
+export default async function ProcesoDetallePage({ params, searchParams }: PageProps) {
   const { id, ord: ordStr } = await params;
   const sp = await searchParams;
   const ordNum = Number(ordStr);
@@ -37,7 +40,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
   ]);
   if (!version || !proceso) notFound();
 
-  // Último run exitoso
   const { data: lastRun } = await supabase
     .from("calculation_runs")
     .select("id, estado, iniciado_en")
@@ -47,7 +49,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     .limit(1)
     .maybeSingle();
 
-  // Obtener periodos del costo_proceso
   const { data: costoProcPeriodos } = await supabase
     .from("costo_proceso")
     .select("periodo, costo_por_ton, costo_total")
@@ -58,7 +59,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
   const periodos = (costoProcPeriodos ?? []).map(r => r.periodo as string);
   const selectedPeriodo = sp.periodo ?? periodos[periodos.length - 1] ?? null;
 
-  // Rendimientos para produccion_ton
   const { data: rendimiento } = await supabase
     .from("rendimientos")
     .select("produccion_ton")
@@ -68,7 +68,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     .maybeSingle();
   const produccionTon = Number(rendimiento?.produccion_ton ?? 0);
 
-  // Cargar log del proceso para el período seleccionado
   const { data: logRows } = selectedPeriodo && lastRun ? await supabase
     .from("calculation_log")
     .select("id, calculo_tipo, material_id, concepto, valor_resultado, parametros_entrada, unidad")
@@ -78,7 +77,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     .order("nivel_jerarquia", { ascending: false })
     : { data: [] };
 
-  // Cargar receta para este proceso/periodo (para pct)
   const { data: recetaRaw } = selectedPeriodo ? await supabase
     .from("recetas")
     .select("receta_lineas(material_id, porcentaje)")
@@ -92,7 +90,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     pctByMat.set(ln.material_id, Number(ln.porcentaje));
   }
 
-  // Cargar nombres de materiales
   const matIds = (logRows ?? []).map(r => r.material_id).filter(Boolean) as string[];
   const { data: materialesRaw } = matIds.length > 0
     ? await supabase.from("materiales").select("id, nombre, codigo").in("id", matIds)
@@ -100,7 +97,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
   const matById = new Map<string, { nombre: string; codigo: string }>();
   for (const m of materialesRaw ?? []) matById.set(m.id, { nombre: m.nombre, codigo: m.codigo });
 
-  // Construir filas del cuadro
   const componentes: ComponenteRow[] = [];
   let total_costo_ton = 0;
 
@@ -112,17 +108,17 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
       if (!row.material_id) continue;
       const mat = matById.get(row.material_id);
       const pct = pctByMat.get(row.material_id) ?? null;
+      const aporte = pct != null ? row.valor_resultado * pct : 0;
       componentes.push({
         concepto: mat?.nombre ?? row.material_id,
         consumo: pct,
         consumo_unidad: "Ton/Ton",
         precio_unit: row.valor_resultado,
-        costo_por_ton: pct != null ? row.valor_resultado * pct : 0,
+        costo_por_ton: aporte,
         calc_id: row.id,
         tipo: "mp",
       });
-      if (pct != null) total_costo_ton += row.valor_resultado * pct;
-
+      if (pct != null) total_costo_ton += aporte;
     } else if (tipo === "costo_energia_proceso") {
       const kwh = Number(params.kwh_ton ?? 0);
       const precioEfec = kwh > 0 ? row.valor_resultado / kwh : null;
@@ -136,7 +132,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
         tipo: "energia",
       });
       total_costo_ton += row.valor_resultado;
-
     } else if (tipo === "costo_componente_derivado_termico") {
       const mat = row.material_id ? matById.get(row.material_id) : null;
       const consumo = Number(params.consumo ?? 0);
@@ -151,7 +146,6 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
         tipo: "combustible",
       });
       total_costo_ton += row.valor_resultado;
-
     } else if (tipo === "costo_fijo_proceso") {
       componentes.push({
         concepto: String(params.codigo ?? row.concepto ?? "Costo fijo"),
@@ -166,180 +160,229 @@ export default async function ProcesoDetalleePage({ params, searchParams }: Page
     }
   }
 
+  // Filtrar componentes con aporte > 0 para el donut
+  const donutData = componentes
+    .filter(c => c.costo_por_ton > 0)
+    .map(c => ({ name: c.concepto, value: c.costo_por_ton }));
+
   const costo_total_cop = total_costo_ton * produccionTon;
   const costoRow = (costoProcPeriodos ?? []).find(r => r.periodo === selectedPeriodo);
 
   return (
-    <div>
-      <nav className="text-xs text-gray-500 mb-2">
+    <div className="space-y-6">
+      {/* ── Breadcrumb ── */}
+      <nav className="text-xs flex items-center gap-1" style={{ color: BRAND.inkSecondary }}>
         <Link href="/versiones" className="hover:underline">Versiones</Link>
-        <span className="mx-1">/</span>
+        <span>/</span>
         <Link href={`/versiones/${id}`} className="hover:underline">{version.nombre}</Link>
-        <span className="mx-1">/</span>
-        <Link href={`/versiones/${id}/costo`} className="hover:underline">Costo</Link>
-        <span className="mx-1">/</span>
-        <span className="text-gray-700">ORD {ordNum} — {proceso.nombre}</span>
+        <span>/</span>
+        <Link href={`/versiones/${id}/costo`} className="hover:underline flex items-center gap-1">
+          <ChevronLeft size={12} /> Costo
+        </Link>
+        <span>/</span>
+        <span style={{ color: BRAND.ink }} className="font-medium">Proceso {ordNum}</span>
       </nav>
 
-      <div className="flex items-start justify-between mb-5">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            <span className="text-gray-400 mr-2 text-base">ORD {ordNum}</span>
-            {proceso.nombre}
-          </h1>
-          {lastRun && (
-            <p className="text-xs text-gray-400 mt-0.5">
-              Run: {new Date(lastRun.iniciado_en).toLocaleString("es-CO")} · {lastRun.estado}
+      {/* ── Hero card ── */}
+      <div
+        className="bg-white rounded-xl shadow-sm p-6"
+        style={{ borderTop: `4px solid ${BRAND.primary}`, border: `1px solid ${BRAND.border}` }}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>
+              Proceso N° {String(ordNum).padStart(2, "0")}
             </p>
-          )}
-        </div>
-
-        {/* Selector de período */}
-        {periodos.length > 1 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Período:</span>
-            <div className="flex gap-1">
+            <h1 className="text-2xl font-bold mt-1" style={{ color: BRAND.ink }}>{proceso.nombre}</h1>
+          </div>
+          {periodos.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1 max-w-md justify-end">
               {periodos.map(p => (
                 <Link
                   key={p}
                   href={`/versiones/${id}/costo/proceso/${ordNum}?periodo=${p}`}
-                  className={`px-2 py-1 rounded text-xs border ${
+                  className="px-2.5 py-1 rounded text-xs font-medium border transition-colors"
+                  style={
                     p === selectedPeriodo
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                  }`}
+                      ? { backgroundColor: BRAND.primary, color: "white", borderColor: BRAND.primary }
+                      : { borderColor: BRAND.border, color: BRAND.inkSecondary }
+                  }
                 >
-                  {fmtPeriodoCorto(p)}
+                  {formatMes(p)}
                 </Link>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mt-6 pt-6 border-t" style={{ borderColor: BRAND.border }}>
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>
+              Costo unitario
+            </p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>
+              {costoRow ? formatCOP(Number(costoRow.costo_por_ton)) : "—"}
+              <span className="text-sm font-normal ml-1" style={{ color: BRAND.inkMuted }}>/Ton</span>
+            </p>
           </div>
-        )}
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>
+              Producción
+            </p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>
+              {produccionTon > 0 ? produccionTon.toLocaleString("es-CO", { maximumFractionDigits: 0 }) : "—"}
+              <span className="text-sm font-normal ml-1" style={{ color: BRAND.inkMuted }}>Ton</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>
+              Costo total del periodo
+            </p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>
+              {produccionTon > 0 ? formatCOP(costo_total_cop) : "—"}
+            </p>
+          </div>
+        </div>
       </div>
 
       {!lastRun ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-          <p className="text-gray-500 text-sm">No hay cálculos para esta versión.</p>
-          <Link href={`/versiones/${id}/calcular`} className="inline-block mt-3 text-sm text-blue-600 hover:underline">
-            Ir a calcular →
-          </Link>
-        </div>
+        <EmptyCard id={id} mensaje="No hay cálculos para esta versión." />
+      ) : componentes.length === 0 ? (
+        <EmptyCard id={id} mensaje="No hay componentes calculados para este proceso en el período seleccionado." />
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <span className="text-sm font-medium text-gray-700">
-                {selectedPeriodo ? fmtPeriodoCompleto(selectedPeriodo) : "—"}
-              </span>
-              {produccionTon > 0 && (
-                <span className="text-xs text-gray-400 ml-3">
-                  Producción: {produccionTon.toLocaleString("es-CO", { maximumFractionDigits: 0 })} Ton
-                </span>
-              )}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* ── Tabla de desglose con barras ── */}
+          <div className="lg:col-span-2 bg-white border rounded-xl shadow-sm overflow-hidden" style={{ borderColor: BRAND.border }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: BRAND.border }}>
+              <h2 className="text-base font-semibold" style={{ color: BRAND.ink }}>Desglose del costo</h2>
+              <p className="text-xs mt-0.5" style={{ color: BRAND.inkMuted }}>
+                {selectedPeriodo ? formatMes(selectedPeriodo) : "—"} · click componente → trazabilidad
+              </p>
             </div>
-            {costoRow && (
-              <div className="text-right">
-                <span className="text-xs text-gray-500">Costo total /Ton: </span>
-                <span className="text-sm font-semibold tabular-nums">
-                  {Number(costoRow.costo_por_ton).toLocaleString("es-CO", { maximumFractionDigits: 0 })} COP
-                </span>
-              </div>
-            )}
-          </div>
-
-          {componentes.length === 0 ? (
-            <div className="p-8 text-center text-sm text-gray-500">
-              No hay componentes calculados para este proceso en el período seleccionado.
-            </div>
-          ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-600">Concepto</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600">Consumo</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-gray-600 text-xs">Und</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600">Precio Unit (COP)</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600">Costo/Ton (COP)</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-gray-600">Total periodo (COP)</th>
+              <thead>
+                <tr style={{ backgroundColor: BRAND.bgBand }}>
+                  <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Componente</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Consumo/Ton</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Precio Unit</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Aporte COP/Ton</th>
                 </tr>
               </thead>
               <tbody>
-                {componentes.map((c, i) => (
-                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 text-gray-900">
-                      {c.calc_id ? (
-                        <Link
-                          href={`/versiones/${id}/calculos/${c.calc_id}`}
-                          className="hover:text-blue-600 hover:underline"
-                        >
-                          {c.concepto}
-                        </Link>
-                      ) : c.concepto}
-                      <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${tipoColor(c.tipo)}`}>
-                        {c.tipo}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {c.consumo != null ? c.consumo.toLocaleString("es-CO", { maximumFractionDigits: 4 }) : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">{c.consumo_unidad}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {c.precio_unit != null
-                        ? c.precio_unit.toLocaleString("es-CO", { maximumFractionDigits: 2 })
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium">
-                      {c.costo_por_ton.toLocaleString("es-CO", { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {produccionTon > 0
-                        ? (c.costo_por_ton * produccionTon).toLocaleString("es-CO", { maximumFractionDigits: 0 })
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {componentes.map((c, i) => {
+                  const pct = total_costo_ton > 0 ? (c.costo_por_ton / total_costo_ton) * 100 : 0;
+                  const color = BRAND.chart[i % BRAND.chart.length];
+                  return (
+                    <tr key={i} className="border-b" style={{ borderColor: BRAND.border }}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            aria-hidden
+                            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: color }}
+                          />
+                          {c.calc_id ? (
+                            <Link
+                              href={`/versiones/${id}/calculos/${c.calc_id}`}
+                              className="hover:underline"
+                              style={{ color: BRAND.ink }}
+                            >
+                              {c.concepto}
+                            </Link>
+                          ) : (
+                            <span style={{ color: BRAND.ink }}>{c.concepto}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" style={{ color: BRAND.inkSecondary }}>
+                        {c.consumo != null ? c.consumo.toLocaleString("es-CO", { maximumFractionDigits: 4 }) : "—"}
+                        <span className="text-xs ml-1" style={{ color: BRAND.inkMuted }}>{c.consumo_unidad === "Ton/Ton" ? "" : c.consumo_unidad}</span>
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ color: BRAND.inkSecondary }}>
+                        {c.precio_unit != null ? formatCOP(c.precio_unit) : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="font-semibold tabular-nums" style={{ color: BRAND.ink }}>
+                          {formatCOP(c.costo_por_ton)}
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: BRAND.bgBand }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }}
+                          />
+                        </div>
+                        <div className="text-xs mt-0.5 tabular-nums" style={{ color: BRAND.inkMuted }}>
+                          {pct.toFixed(1)} %
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
-              <tfoot className="bg-gray-50 border-t-2 border-gray-300">
-                <tr>
-                  <td className="px-4 py-2.5 font-semibold text-gray-900" colSpan={4}>
+              <tfoot>
+                <tr style={{ backgroundColor: BRAND.primarySoft, borderTop: `2px solid ${BRAND.primary}` }}>
+                  <td className="px-4 py-3 font-bold uppercase tracking-wide text-xs" colSpan={3} style={{ color: BRAND.ink }}>
                     Total {proceso.nombre}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">
-                    {total_costo_ton.toLocaleString("es-CO", { maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-gray-900">
-                    {produccionTon > 0
-                      ? costo_total_cop.toLocaleString("es-CO", { maximumFractionDigits: 0 })
-                      : "—"}
+                  <td className="px-3 py-3 text-right tabular-nums font-bold text-base" style={{ color: BRAND.ink }}>
+                    {formatCOP(total_costo_ton)}
                   </td>
                 </tr>
               </tfoot>
             </table>
-          )}
+          </div>
+
+          {/* ── Donut composición ── */}
+          <div className="bg-white border rounded-xl shadow-sm p-6" style={{ borderColor: BRAND.border }}>
+            <h2 className="text-base font-semibold mb-1" style={{ color: BRAND.ink }}>Composición</h2>
+            <p className="text-xs mb-4" style={{ color: BRAND.inkMuted }}>
+              % aporte por componente
+            </p>
+            {donutData.length > 0 ? (
+              <>
+                <DonutChart data={donutData} height={240} unit="COP" />
+                <ul className="mt-4 space-y-1.5 text-xs">
+                  {donutData.map((d, i) => {
+                    const pct = total_costo_ton > 0 ? (d.value / total_costo_ton) * 100 : 0;
+                    return (
+                      <li key={i} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 truncate">
+                          <span
+                            aria-hidden
+                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: BRAND.chart[i % BRAND.chart.length] }}
+                          />
+                          <span className="truncate" style={{ color: BRAND.inkSecondary }}>{d.name}</span>
+                        </span>
+                        <span className="tabular-nums font-medium" style={{ color: BRAND.ink }}>
+                          {pct.toFixed(1)} %
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: BRAND.inkMuted }}>Sin datos de composición.</p>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function fmtPeriodoCorto(p: string) {
-  return new Date(p + "T00:00:00Z").toLocaleDateString("es-CO", {
-    month: "short", year: "2-digit", timeZone: "UTC",
-  });
-}
-
-function fmtPeriodoCompleto(p: string) {
-  return new Date(p + "T00:00:00Z").toLocaleDateString("es-CO", {
-    month: "long", year: "numeric", timeZone: "UTC",
-  });
-}
-
-function tipoColor(tipo: string) {
-  switch (tipo) {
-    case "mp":          return "bg-blue-50 text-blue-600";
-    case "energia":     return "bg-yellow-50 text-yellow-700";
-    case "combustible": return "bg-orange-50 text-orange-700";
-    case "fijo":        return "bg-gray-100 text-gray-600";
-    default:            return "bg-gray-100 text-gray-600";
-  }
+function EmptyCard({ id, mensaje }: { id: string; mensaje: string }) {
+  return (
+    <div className="bg-white border rounded-xl shadow-sm p-12 text-center" style={{ borderColor: BRAND.border }}>
+      <p className="text-sm" style={{ color: BRAND.inkSecondary }}>{mensaje}</p>
+      <Link
+        href={`/versiones/${id}/calcular`}
+        className="inline-block mt-3 text-sm hover:underline"
+        style={{ color: BRAND.primary }}
+      >
+        Ir a calcular →
+      </Link>
+    </div>
+  );
 }

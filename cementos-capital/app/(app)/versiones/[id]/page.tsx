@@ -101,42 +101,22 @@ export default async function VersionOverviewPage({
             {version.sap_enabled && <span className="ml-2">· SAP</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/versiones/${id}/dashboard`}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Dashboard
-          </Link>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link href={`/versiones/${id}/dashboard`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Dashboard</Link>
+          <Link href={`/versiones/${id}/costo`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo</Link>
+          <Link href={`/versiones/${id}/graficas`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Gráficas</Link>
+          <Link href={`/versiones/${id}/arrastrado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo arrastrado</Link>
+          <Link href={`/versiones/${id}/sin-consolidar`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Sin consolidar</Link>
+          <Link href={`/versiones/${id}/sensibilidad`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Sensibilidad</Link>
+          <Link href={`/versiones/${id}/desviaciones`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Desviaciones</Link>
           {version.sap_enabled && (
-            <Link
-              href={`/versiones/${id}/base`}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Base SAP
-            </Link>
+            <Link href={`/versiones/${id}/base`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Base SAP</Link>
           )}
-          <Link
-            href={`/versiones/${id}/sensibilidad`}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Sensibilidad
-          </Link>
-          <Link
-            href={`/versiones/${id}/desviaciones`}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Desviaciones
-          </Link>
-          <Link
-            href={`/versiones/${id}/datos/precios`}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Editar datos
-          </Link>
+          <Link href={`/versiones/${id}/datos/precios`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Editar datos</Link>
           <Link
             href={`/versiones/${id}/calcular`}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-3 py-1.5 text-sm text-white rounded"
+            style={{ backgroundColor: "#0098BA" }}
           >
             Calcular
           </Link>
