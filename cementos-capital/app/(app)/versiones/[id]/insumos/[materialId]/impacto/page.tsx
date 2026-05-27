@@ -65,7 +65,7 @@ export default async function ImpactoPage({
     (procesos ?? []).map(p => [p.id, { ord: p.ord, nombre: p.nombre }]),
   );
 
-  let aportes: Aporte[] = [];
+  const aportes: Aporte[] = [];
   let totalAporte = 0;
 
   if (runId && procesosById.size > 0) {

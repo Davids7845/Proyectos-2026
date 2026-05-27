@@ -48,8 +48,8 @@ export default function DesviacionesFilters({
 
   function navigate(año: string, mes: string) {
     const p = new URLSearchParams(sp.toString());
-    año ? p.set("año", año) : p.delete("año");
-    mes  ? p.set("mes",  mes)  : p.delete("mes");
+    if (año) p.set("año", año); else p.delete("año");
+    if (mes) p.set("mes", mes); else p.delete("mes");
     startTransition(() => router.push(`${pathname}?${p}`));
   }
 
