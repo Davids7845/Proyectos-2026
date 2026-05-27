@@ -28,7 +28,7 @@ export default function AppNav({ user }: AppNavProps) {
   ];
 
   return (
-    <header style={{ backgroundColor: BRAND.primary }} className="shadow-md">
+    <header style={{ backgroundColor: BRAND.primaryDark }} className="shadow-md">
       <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="font-bold text-white text-sm tracking-wide">

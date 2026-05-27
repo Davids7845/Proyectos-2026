@@ -1,60 +1,70 @@
 // ═══════════════════════════════════════════════════════════════════════
-// PALETA CORPORATIVA ALIÓN
-// Azul corporativo + Naranja de acento + Gris cementero neutral
+// PALETA CORPORATIVA ALIÓN — basada en Tema_Alion.json (Power BI oficial)
+// dataColors: ["#0098BA","#003E39","#00CBBF","#58BCD2","#91D2E1",
+//              "#003865","#FF8400","#F1E000"]
+// foreground: "#486C81"  tableAccent: "#0098BA"
 // ═══════════════════════════════════════════════════════════════════════
 
 export const BRAND = {
-  // ─── AZUL CORPORATIVO (color principal Alión) ───
-  primary:        "#1E40AF",  // azul Alión — blue-800
-  primaryDark:    "#1E3A8A",  // azul profundo para hover/active — blue-900
-  primaryLight:   "#3B82F6",  // azul claro para fondos sutiles — blue-500
-  primarySoft:    "#DBEAFE",  // azul muy claro para badges/highlights — blue-100
+  // ─── TEAL ALIÓN (color corporativo principal) ───
+  primary:        "#0098BA",  // teal azul Alión — dataColors[0] / tableAccent
+  primaryDark:    "#003865",  // azul marino Alión — dataColors[5]
+  primaryLight:   "#58BCD2",  // teal medio — dataColors[3]
+  primarySoft:    "#E0F5F9",  // teal muy claro para fondos/badges
 
-  // ─── NARANJA ALIÓN (acento, productos ART) ───
-  accent:         "#EA580C",  // naranja Alión — orange-600
-  accentDark:     "#C2410C",  // naranja oscuro para hover — orange-700
-  accentLight:    "#FB923C",  // naranja claro — orange-400
-  accentSoft:     "#FED7AA",  // naranja muy claro para badges — orange-200
+  // ─── TEAL PROFUNDO (verde oscuro complementario) ───
+  tealDark:       "#003E39",  // teal/verde oscuro — dataColors[1]
+  tealBright:     "#00CBBF",  // teal brillante — dataColors[2]
+  tealLight:      "#91D2E1",  // teal claro — dataColors[4]
 
-  // ─── NEUTROS (gris cementero del saco) ───
-  ink:            "#0F172A",  // texto principal — slate-900
-  inkSecondary:   "#475569",  // texto secundario — slate-600
-  inkMuted:       "#94A3B8",  // texto desactivado/labels — slate-400
+  // ─── NARANJA ALIÓN (acento) ───
+  accent:         "#FF8400",  // naranja Alión — dataColors[6]
+  accentDark:     "#CC6A00",  // naranja oscuro para hover
+  accentLight:    "#FFB366",  // naranja claro
+  accentSoft:     "#FFE8C4",  // naranja muy claro para badges
+
+  // ─── AMARILLO ALIÓN (terciario) ───
+  yellow:         "#F1E000",  // amarillo Alión — dataColors[7]
+
+  // ─── NEUTROS ───
+  ink:            "#003865",  // texto principal — navy Alión
+  inkSecondary:   "#486C81",  // texto secundario — foreground oficial
+  inkMuted:       "#7FA3B3",  // texto desactivado/labels
 
   // ─── FONDOS ───
-  bgCard:         "#FFFFFF",  // tarjetas
-  bgSubtle:       "#F8FAFC",  // fondo general página — slate-50
-  bgBand:         "#F1F5F9",  // bandas alternadas tabla — slate-100
-  bgHover:        "#F1F5F9",  // hover sobre filas
-  border:         "#E2E8F0",  // bordes finos — slate-200
-  borderStrong:   "#CBD5E1",  // bordes más definidos — slate-300
+  bgCard:         "#FFFFFF",
+  bgSubtle:       "#F0F9FB",  // fondo página — teal muy sutil
+  bgBand:         "#E5F4F8",  // bandas alternadas tabla — teal claro
+  bgHover:        "#D6EEF5",  // hover filas
+  border:         "#B8DDE8",  // bordes finos — teal suave
+  borderStrong:   "#7BBDCE",  // bordes más definidos
 
   // ─── ESTADOS SEMÁNTICOS ───
-  success:        "#059669",  // verde — emerald-600
-  successSoft:    "#D1FAE5",  // verde claro — emerald-100
-  warning:        "#D97706",  // ámbar — amber-600
-  warningSoft:    "#FEF3C7",  // ámbar claro — amber-100
-  danger:         "#DC2626",  // rojo — red-600
-  dangerSoft:     "#FEE2E2",  // rojo claro — red-100
+  success:        "#059669",
+  successSoft:    "#D1FAE5",
+  warning:        "#D97706",
+  warningSoft:    "#FEF3C7",
+  danger:         "#DC2626",
+  dangerSoft:     "#FEE2E2",
 
-  // ─── PALETA PARA CHARTS ───
+  // ─── PALETA PARA CHARTS (orden oficial del tema Alión) ───
   chart: [
-    "#1E40AF",  // azul Alión (corporativo)
-    "#EA580C",  // naranja Alión (acento)
-    "#0891B2",  // cian complementario
-    "#059669",  // verde fábrica
-    "#7C3AED",  // morado pizarra
-    "#475569",  // gris piedra
-    "#D97706",  // ámbar cobre
-    "#0F766E",  // teal mineral
+    "#0098BA",  // teal azul principal
+    "#FF8400",  // naranja acento
+    "#003E39",  // teal oscuro
+    "#00CBBF",  // teal brillante
+    "#003865",  // azul marino
+    "#58BCD2",  // teal medio
+    "#F1E000",  // amarillo Alión
+    "#91D2E1",  // teal claro
   ],
 
   // ─── COLORES POR TIPO DE PRODUCTO (semántica Alión) ───
   productos: {
-    ug:      "#1E40AF",  // Cemento UG → AZUL (identidad oficial)
-    art:     "#EA580C",  // Cemento ART → NARANJA (identidad oficial)
-    fibro:   "#0F766E",  // Fibrocemento → teal mineral
-    clinker: "#475569",  // Clinker → gris piedra (semielaborado)
+    ug:      "#0098BA",  // Cemento UG → teal azul (color principal Alión)
+    art:     "#FF8400",  // Cemento ART → naranja Alión
+    fibro:   "#003E39",  // Fibrocemento → teal oscuro
+    clinker: "#486C81",  // Clinker → gris azulado (foreground oficial)
   },
 } as const;
 
