@@ -15,7 +15,7 @@ import type {
   UUID,
 } from "@/lib/calc/engine/context";
 
-const CODIGO_CALIZA_TRITURADA = "CALIZATRI";
+const CODIGOS_CALIZA_PRIORIDAD = ["CALIZATRI", "CALTLVTRIT"];
 
 export class Ord02Adiciones implements ProcesoCalculator {
   ord = 2;
@@ -62,15 +62,25 @@ export class Ord02Adiciones implements ProcesoCalculator {
       };
     }
 
-    const mat = ctx.materialesByCodigo.get(CODIGO_CALIZA_TRITURADA);
-    if (!mat) throw new Error(`ORD2: falta material ${CODIGO_CALIZA_TRITURADA}`);
+    // Busca el primer código de caliza con precio disponible. Esto cubre los
+    // dos escenarios del Excel: la "Caliza Triturada" estándar (CALIZATRI) y
+    // el alias "Caliza Explotada" que se importa como CALTLVTRIT cuando el
+    // Excel sólo trae el nombre canónico.
+    let mat: { id: string; nombre: string; codigo: string } | undefined;
+    let precio: { precio: number } | undefined;
+    for (const codigo of CODIGOS_CALIZA_PRIORIDAD) {
+      const m = ctx.materialesByCodigo.get(codigo);
+      if (!m) continue;
+      const p = ctx.preciosByMatPeriodo.get(`${m.id}|${periodo}|`);
+      if (p) { mat = m; precio = p; break; }
+    }
+    if (!mat || !precio) {
+      throw new Error(`ORD2 ${periodo}: falta precio de caliza (probó ${CODIGOS_CALIZA_PRIORIDAD.join(", ")})`);
+    }
 
-    const precio = ctx.preciosByMatPeriodo.get(`${mat.id}|${periodo}|`);
-    if (!precio) throw new Error(`ORD2 ${periodo}: falta precio Caliza Triturada`);
-
-    // En esta v1 sólo hay un componente (100% caliza triturada).
+    // En esta v1 sólo hay un componente (100% caliza para adiciones).
     // Aún así usamos la fórmula ponderada para mantener trazabilidad uniforme.
-    const items = [{ nombre: "Caliza Triturada", precio: precio.precio, pct: 1.0 }];
+    const items = [{ nombre: mat.nombre, precio: precio.precio, pct: 1.0 }];
     const f = calcMezcla({ items_json: JSON.stringify(items) });
 
     const mpId = await writer.log({

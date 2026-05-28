@@ -29,7 +29,7 @@ export default async function CostoPivotPage({
   // Último run para esta versión
   const { data: lastRun } = await supabase
     .from("calculation_runs")
-    .select("id, estado, iniciado_en, finalizado_en, duracion_ms, total_calculos, error_msg")
+    .select("id, estado, iniciado_en, finalizado_en, duracion_ms, total_calculos, error_msg, procesos_omitidos")
     .eq("version_id", id)
     .order("iniciado_en", { ascending: false })
     .limit(1)
@@ -203,6 +203,18 @@ export default async function CostoPivotPage({
           <p className="mt-2 text-xs text-red-700 font-medium bg-red-50 rounded px-3 py-1.5">
             Error: {lastRun.error_msg}
           </p>
+        )}
+        {Array.isArray((lastRun as any).procesos_omitidos) && (lastRun as any).procesos_omitidos.length > 0 && (
+          <details className="mt-2">
+            <summary className="text-xs text-amber-800 font-medium bg-amber-50 rounded px-3 py-1.5 cursor-pointer">
+              {(lastRun as any).procesos_omitidos.length} procesos omitidos — click para ver razones
+            </summary>
+            <ul className="mt-2 text-xs text-amber-900 bg-amber-50/60 rounded px-3 py-2 space-y-0.5 max-h-48 overflow-auto font-mono">
+              {((lastRun as any).procesos_omitidos as Array<{ ord: number; razon: string }>).map((o, i) => (
+                <li key={i}>ORD {o.ord}: {o.razon}</li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
 
