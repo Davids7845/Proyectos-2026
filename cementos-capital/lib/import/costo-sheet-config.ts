@@ -27,10 +27,10 @@ export const COSTOS_FIJOS_CONFIG: Record<
     { row: 13, codigo: "REGALIAS",         nombre: "Regalías" },
   ],
   2: [
-    { row: 19, codigo: "BARRAS_PLAC_AD",  nombre: "Barras y Placas" },
-    { row: 20, codigo: "MAT_DIQUE_AD",    nombre: "Material Dique" },
-    { row: 21, codigo: "DESMANT_AD",      nombre: "Desmantelamiento" },
-    { row: 22, codigo: "REGALIAS_AD",     nombre: "Regalías" },
+    { row: 20, codigo: "BARRAS_PLAC_AD",  nombre: "Barras y Placas" },
+    { row: 21, codigo: "MAT_DIQUE_AD",    nombre: "Material Dique" },
+    { row: 22, codigo: "DESMANT_AD",      nombre: "Desmantelamiento" },
+    { row: 23, codigo: "REGALIAS_AD",     nombre: "Regalías" },
   ],
   3: [
     { row: 30, codigo: "CUERPOS_MOL_CR",   nombre: "Cuerpos Moledores (Crudo)" },
@@ -68,7 +68,7 @@ export const COSTOS_FIJOS_CONFIG: Record<
   20: [
     { row: 54, codigo: "CARGUE_ALT",    nombre: "Cargue" },
     { row: 55, codigo: "DESCARGUE_ALT", nombre: "Descargue" },
-    { row: 57, codigo: "VARIABLES_ALT", nombre: "Variables" },
+    { row: 56, codigo: "VARIABLES_ALT", nombre: "Variables" },
   ],
 };
 
@@ -77,14 +77,14 @@ export const COSTOS_FIJOS_CONFIG: Record<
  */
 export const ENERGIA_OVERRIDE_ROWS: Record<number, number> = {
    1:   9,
-   2:  23,
+   2:  19,
    3:  33,
    4:  44,
    5:  66,
    6:  85,
    7: 101,
   16: 164,
-  20:  56,
+  20:  57,
 };
 
 /** Overrides de consumo (cascada) de materiales específicos para ORD 5. */
