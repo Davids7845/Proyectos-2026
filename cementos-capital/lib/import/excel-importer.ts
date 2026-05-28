@@ -53,7 +53,12 @@ const SHEET_NAME = "Datos";
 const CONCEPTO_COL = 0;          // col B
 const UNIDAD_COL = 1;             // col C
 const FIRST_PERIOD_COL = 2;       // col D
-const MAX_PERIODS = 12;           // 12 meses del presupuesto (Sep2025–Ago2026)
+const MAX_PERIODS_HARD = 24;      // límite duro de seguridad al leer columnas del header
+
+export interface VersionRange {
+  fechaInicio: string; // "YYYY-MM-DD"
+  fechaFin: string;    // "YYYY-MM-DD"
+}
 
 const SECTION_NAMES = new Set([
   "Precios",
@@ -224,7 +229,29 @@ function mapEnergiaTermicaLabel(label: string): { campo: EnergiaTermicaParsed["c
 // Parser principal
 // ─────────────────────────────────────────────────────────────────
 
-export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExcel {
+/**
+ * Lista esperada de períodos para un rango [fechaInicio, fechaFin], como "YYYY-MM-01".
+ */
+export function periodosDeRango(range: VersionRange): Periodo[] {
+  const out: Periodo[] = [];
+  const start = new Date(`${range.fechaInicio}T00:00:00Z`);
+  const end   = new Date(`${range.fechaFin}T00:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return out;
+  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last   = new Date(Date.UTC(end.getUTCFullYear(),   end.getUTCMonth(),   1));
+  while (cursor <= last) {
+    const y = cursor.getUTCFullYear();
+    const m = String(cursor.getUTCMonth() + 1).padStart(2, "0");
+    out.push(`${y}-${m}-01`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return out;
+}
+
+export function parseExcel(
+  buffer: ArrayBuffer | Buffer | Uint8Array,
+  versionRange?: VersionRange,
+): ParsedExcel {
   const errors: ImportError[] = [];
   const warnings: ImportWarning[] = [];
 
@@ -246,35 +273,70 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
   }) as Sheet2D;
 
   // ─── Periodos: primera fila con fecha en col D ───
-  const periodos: Periodo[] = [];
+  // Leemos TODOS los períodos disponibles en el header (hasta MAX_PERIODS_HARD) y
+  // guardamos también el offset de columna de cada uno; así, si la versión define un
+  // rango, podemos mapear cada período retenido a su columna original sin desordenar.
+  const periodosAll: Array<{ periodo: Periodo; col: number }> = [];
   let headerRow0 = -1;
   for (let r = 0; r < Math.min(sheet.length, 10); r++) {
     const cand = cellToPeriodo(getCell(sheet, r, FIRST_PERIOD_COL));
     if (cand) {
       headerRow0 = r;
-      for (let c = FIRST_PERIOD_COL; c < FIRST_PERIOD_COL + MAX_PERIODS; c++) {
+      for (let c = FIRST_PERIOD_COL; c < FIRST_PERIOD_COL + MAX_PERIODS_HARD; c++) {
         const p = cellToPeriodo(getCell(sheet, r, c));
-        if (p) periodos.push(p);
+        if (p) periodosAll.push({ periodo: p, col: c });
         else break;
       }
       break;
     }
   }
 
-  if (headerRow0 < 0 || periodos.length === 0) {
+  if (headerRow0 < 0 || periodosAll.length === 0) {
     errors.push({
       seccion: "general",
       row_excel: null,
-      mensaje: "No se detectó fila de cabeceras de periodos (esperado: cols D..O con fechas).",
+      mensaje: "No se detectó fila de cabeceras de periodos (esperado: cols D..S con fechas).",
     });
     return emptyParsed(errors, warnings);
   }
-  if (periodos.length < MAX_PERIODS) {
-    warnings.push({
+
+  // Si la versión define un rango, filtramos a los meses dentro del rango.
+  // Si no, conservamos todos los períodos detectados (comportamiento legacy).
+  let periodosFiltrados = periodosAll;
+  if (versionRange) {
+    const rangoEsperado = new Set(periodosDeRango(versionRange));
+    periodosFiltrados = periodosAll.filter(p => rangoEsperado.has(p.periodo));
+
+    const detectados = new Set(periodosAll.map(p => p.periodo));
+    const faltantes = Array.from(rangoEsperado).filter(p => !detectados.has(p));
+    if (faltantes.length > 0) {
+      warnings.push({
+        seccion: "general",
+        row_excel: headerRow0 + 1,
+        mensaje: `La versión espera ${rangoEsperado.size} meses pero el Excel sólo trae ${periodosAll.length}. Faltan: ${faltantes.join(", ")}`,
+      });
+    }
+    const sobrantes = periodosAll.length - periodosFiltrados.length;
+    if (sobrantes > 0) {
+      warnings.push({
+        seccion: "general",
+        row_excel: headerRow0 + 1,
+        mensaje: `Se ignoraron ${sobrantes} períodos del Excel que están fuera del rango de la versión.`,
+      });
+    }
+  }
+
+  // Listado plano y mapeo período → columna (preserva el orden cronológico del header).
+  const periodos: Periodo[] = periodosFiltrados.map(p => p.periodo);
+  const periodCols: number[] = periodosFiltrados.map(p => p.col);
+
+  if (periodos.length === 0) {
+    errors.push({
       seccion: "general",
       row_excel: headerRow0 + 1,
-      mensaje: `Sólo ${periodos.length} periodos detectados (esperados ${MAX_PERIODS}).`,
+      mensaje: "Ningún período del Excel cae dentro del rango de la versión.",
     });
+    return emptyParsed(errors, warnings);
   }
 
   // ─── Mapeo de secciones: nombre → [row_inicio_0based, row_fin_0based_excl] ───
@@ -310,7 +372,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       // Saltar filas derivadas (e.g. "Caliza + Martillo" se calcula en el motor)
       if (/\s\+\s/.test(concepto)) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         precios.push({
           material_nombre: concepto,
@@ -334,7 +396,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
       if (!proveedor || !unidad) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         const pct = v > 1.5 ? v / 100 : v;
         porcentajes_consumo.push({
@@ -385,7 +447,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       }
 
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         recetas.push({
           producto_nombre: productoNombre,
@@ -408,7 +470,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
       if (!concepto || !unidad) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         const pct = v > 1.5 ? v / 100 : v;
         humedades.push({
@@ -431,7 +493,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
       if (!concepto || !unidad) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         const pct = v > 1.5 ? v / 100 : v;
         roturas.push({
@@ -454,7 +516,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const unidad = cleanText(getCell(sheet, r, UNIDAD_COL));
       if (!concepto || !unidad) continue;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         ventas.push({
           material_nombre: concepto,
@@ -478,7 +540,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       if (!concepto || !unidad) continue;
       const { campo, proceso } = extractProcesoFromParens(concepto);
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         rendimientos.push({
           campo,
@@ -503,7 +565,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       if (!concepto || !unidad) continue;
       const { campo, proceso } = extractProcesoFromParens(concepto);
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         // Normalizar porcentajes (disponibilidad, OEE, utilización) que vienen 0..1 ó 0..100
         const isPct = unidad === "%" || /disponibilidad|oee|utilizaci/i.test(campo);
@@ -531,7 +593,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       if (!concepto || !unidad) continue;
       const { campo, proceso_key } = mapEnergiaLabel(concepto);
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         parametros_energia.push({
           campo,
@@ -559,7 +621,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       const m = concepto.match(/^(.+?)\s*\(PCI\)\s*$/i);
       const proveedor = m ? cleanText(m[1]) : concepto;
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         combustibles_pci.push({
           proveedor,
@@ -582,7 +644,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       if (!concepto || !unidad) continue;
       const { campo, componente } = mapEnergiaTermicaLabel(concepto);
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         // Normalizar % de composición
         const isPctComp = campo === "composicion" && unidad === "%" && v > 1.5;
@@ -610,7 +672,7 @@ export function parseExcel(buffer: ArrayBuffer | Buffer | Uint8Array): ParsedExc
       if (!concepto || !unidad) continue;
       const { campo, material } = mapInventarioLabel(concepto);
       for (let i = 0; i < periodos.length; i++) {
-        const v = cellToNumber(getCell(sheet, r, FIRST_PERIOD_COL + i));
+        const v = cellToNumber(getCell(sheet, r, periodCols[i]));
         if (v == null) continue;
         inventarios.push({
           material_nombre: material,

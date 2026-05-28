@@ -26,7 +26,7 @@ export default async function VersionesPage() {
             Versiones de Presupuesto
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Septiembre 2025 – Agosto 2026
+            Cada versión define su propio rango de meses.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -82,9 +82,9 @@ export default async function VersionesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 tabular-nums">
-                      {new Date(v.periodo_inicio).toLocaleDateString("es-CO", { month: "short", year: "numeric" })}
+                      {new Date(v.fecha_inicio ?? v.periodo_inicio).toLocaleDateString("es-CO", { month: "short", year: "numeric", timeZone: "UTC" })}
                       {" – "}
-                      {new Date(v.periodo_fin).toLocaleDateString("es-CO", { month: "short", year: "numeric" })}
+                      {new Date(v.fecha_fin ?? v.periodo_fin).toLocaleDateString("es-CO", { month: "short", year: "numeric", timeZone: "UTC" })}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${estado.color}`}>

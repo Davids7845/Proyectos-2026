@@ -255,6 +255,23 @@ export async function ensureFormulas(supabase: Client): Promise<Map<string, UUID
 // Cargar contexto de cálculo desde Supabase
 // ─────────────────────────────────────────────────────────────────
 
+// Genera la lista de períodos ("YYYY-MM-01") entre dos fechas inclusivas.
+function periodosEntre(inicioISO: string, finISO: string): Periodo[] {
+  const out: Periodo[] = [];
+  const start = new Date(`${inicioISO.slice(0, 10)}T00:00:00Z`);
+  const end   = new Date(`${finISO.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return out;
+  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last   = new Date(Date.UTC(end.getUTCFullYear(),   end.getUTCMonth(),   1));
+  while (cursor <= last) {
+    const y = cursor.getUTCFullYear();
+    const m = String(cursor.getUTCMonth() + 1).padStart(2, "0");
+    out.push(`${y}-${m}-01`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return out;
+}
+
 export async function loadContext(
   supabase: Client,
   versionId: UUID,
@@ -288,7 +305,7 @@ export async function loadContext(
     sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
     sb.from("energia_overrides").select("proceso_id, periodo, kwh_ton, precio_efectivo").eq("version_id", versionId),
     sb.from("mp_overrides").select("proceso_id, material_codigo, periodo, consumo_ton_ton, precio_cop_ton").eq("version_id", versionId),
-    sb.from("budget_versions").select("precios_fijos").eq("id", versionId).single(),
+    sb.from("budget_versions").select("precios_fijos, fecha_inicio, fecha_fin, periodo_inicio, periodo_fin").eq("id", versionId).single(),
     sb.from("precios_fijos_overrides").select("proceso_id, periodo, precio_cop_ton").eq("version_id", versionId),
   ]);
 
@@ -450,10 +467,25 @@ export async function loadContext(
     preciosFijosByKey.set(`${pf.proceso_id}|${pf.periodo}`, Number(pf.precio_cop_ton));
   }
 
+  // Fase 2d.1: períodos de la versión (fecha_inicio → fecha_fin), no derivados de los datos importados.
+  // Esto desacopla el motor del importer: la versión define los meses que se calculan.
+  const versionRange = versionRow as {
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+    periodo_inicio?: string | null;
+    periodo_fin?: string | null;
+  } | null;
+  const fechaInicio = versionRange?.fecha_inicio ?? versionRange?.periodo_inicio ?? null;
+  const fechaFin    = versionRange?.fecha_fin    ?? versionRange?.periodo_fin    ?? null;
+  const periodosVersion = fechaInicio && fechaFin ? periodosEntre(fechaInicio, fechaFin) : [];
+  // Fallback: si la versión no tiene rango (caso histórico o test fixtures sin budget_versions),
+  // usar los períodos detectados en precios_insumos.
+  const periodosFinales = periodosVersion.length > 0 ? periodosVersion : Array.from(periodosSet).sort();
+
   return {
     versionId,
     runId,
-    periodos: Array.from(periodosSet).sort(),
+    periodos: periodosFinales,
     procesos,
     materialesById,
     materialesByCodigo,

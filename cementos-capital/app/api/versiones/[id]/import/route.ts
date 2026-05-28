@@ -18,7 +18,7 @@ export async function POST(
 
   const { data: version, error: verErr } = await supabase
     .from("budget_versions")
-    .select("id, estado")
+    .select("id, estado, fecha_inicio, fecha_fin, periodo_inicio, periodo_fin")
     .eq("id", versionId)
     .single();
   if (verErr || !version) {
@@ -38,9 +38,12 @@ export async function POST(
   }
   const ab = await file.arrayBuffer();
 
+  const fechaInicio = (version as { fecha_inicio?: string | null }).fecha_inicio ?? version.periodo_inicio;
+  const fechaFin    = (version as { fecha_fin?: string | null }).fecha_fin       ?? version.periodo_fin;
+
   let parsed;
   try {
-    parsed = parseExcel(ab);
+    parsed = parseExcel(ab, { fechaInicio, fechaFin });
   } catch (e: any) {
     return NextResponse.json({ error: `parse: ${e?.message ?? e}` }, { status: 422 });
   }

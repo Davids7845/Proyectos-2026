@@ -8,6 +8,7 @@ describe("Importer Excel real — 12 secciones", () => {
 
   beforeAll(() => {
     const buffer = loadExcelFixture();
+    // Sin versionRange: el importer lee todos los meses disponibles en el Excel (16).
     parsed = parseExcel(buffer);
   });
 
@@ -15,8 +16,9 @@ describe("Importer Excel real — 12 secciones", () => {
     expect(parsed.errors).toHaveLength(0);
   });
 
-  it("Detecta 12 periodos", () => {
-    expect(parsed.periodos).toHaveLength(12);
+  it("Detecta los períodos del Excel (≥12, ≤24)", () => {
+    expect(parsed.periodos.length).toBeGreaterThanOrEqual(12);
+    expect(parsed.periodos.length).toBeLessThanOrEqual(24);
     expect(parsed.periodos[0]).toMatch(/^\d{4}-\d{2}-01$/);
   });
 
@@ -97,5 +99,31 @@ describe("Importer Excel real — 12 secciones", () => {
     expect(materiales).toContain("clinker");
     expect(materiales).toContain("yeso");
     expect(materiales).toContain("puzolana");
+  });
+});
+
+describe("Importer Excel real — rango configurable por versión", () => {
+  it("filtra los períodos a Sep 2025–Ago 2026 (12 meses)", () => {
+    const buffer = loadExcelFixture();
+    const parsed = parseExcel(buffer, { fechaInicio: "2025-09-01", fechaFin: "2026-08-01" });
+    expect(parsed.errors).toHaveLength(0);
+    expect(parsed.periodos).toHaveLength(12);
+    expect(parsed.periodos[0]).toBe("2025-09-01");
+    expect(parsed.periodos[parsed.periodos.length - 1]).toBe("2026-08-01");
+  });
+
+  it("filtra los períodos a Sep 2025–Dic 2026 (16 meses)", () => {
+    const buffer = loadExcelFixture();
+    const parsed = parseExcel(buffer, { fechaInicio: "2025-09-01", fechaFin: "2026-12-01" });
+    expect(parsed.errors).toHaveLength(0);
+    expect(parsed.periodos.length).toBeLessThanOrEqual(16);
+    expect(parsed.periodos[0]).toBe("2025-09-01");
+  });
+
+  it("advierte cuando la versión pide períodos que el Excel no trae", () => {
+    const buffer = loadExcelFixture();
+    const parsed = parseExcel(buffer, { fechaInicio: "2025-09-01", fechaFin: "2027-12-01" });
+    const warnFaltantes = parsed.warnings.find(w => /espera/i.test(w.mensaje));
+    expect(warnFaltantes).toBeDefined();
   });
 });

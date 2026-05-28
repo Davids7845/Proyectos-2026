@@ -3,6 +3,26 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { BRAND } from "@/lib/ui/colors";
+
+// Convierte "YYYY-MM" → "YYYY-MM-01" (formato DATE).
+function monthInputToDate(s: string): string {
+  return `${s}-01`;
+}
+
+// Cuenta meses inclusivos entre dos "YYYY-MM-01".
+function countMonths(inicio: string, fin: string): number {
+  const a = new Date(`${inicio}T00:00:00Z`);
+  const b = new Date(`${fin}T00:00:00Z`);
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth()) + 1;
+}
+
+function formatRango(inicio: string, fin: string): string {
+  const a = new Date(`${inicio}T00:00:00Z`);
+  const b = new Date(`${fin}T00:00:00Z`);
+  const opts: Intl.DateTimeFormatOptions = { month: "short", year: "numeric", timeZone: "UTC" };
+  return `${a.toLocaleDateString("es-CO", opts)} → ${b.toLocaleDateString("es-CO", opts)}`;
+}
 
 export default function NuevaVersionButton() {
   const [open, setOpen] = useState(false);
@@ -10,13 +30,25 @@ export default function NuevaVersionButton() {
   const [descripcion, setDescripcion] = useState("");
   const [sapEnabled, setSapEnabled] = useState(false);
   const [preciosFijos, setPreciosFijos] = useState(false);
+  // Default: Sep 2025 → Dic 2026 (16 meses, alineado con Excel Nueva_Plantilla_Ppto_CV_V2)
+  const [mesInicio, setMesInicio] = useState("2025-09");
+  const [mesFin, setMesFin] = useState("2026-12");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
+  const fechaInicioISO = monthInputToDate(mesInicio);
+  const fechaFinISO    = monthInputToDate(mesFin);
+  const meses = countMonths(fechaInicioISO, fechaFinISO);
+  const rangoOk = meses >= 1;
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (!rangoOk) {
+      setError("La fecha de fin debe ser igual o posterior a la de inicio.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -28,8 +60,10 @@ export default function NuevaVersionButton() {
       estado: "borrador",
       sap_enabled: sapEnabled,
       precios_fijos: preciosFijos,
-      periodo_inicio: "2025-09-01",
-      periodo_fin: "2026-08-01",
+      periodo_inicio: fechaInicioISO,
+      periodo_fin: fechaFinISO,
+      fecha_inicio: fechaInicioISO,
+      fecha_fin: fechaFinISO,
       creado_por: user?.id ?? null,
     });
 
@@ -49,7 +83,8 @@ export default function NuevaVersionButton() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700"
+        className="px-4 py-2 text-white text-sm font-medium rounded hover:opacity-90"
+        style={{ backgroundColor: BRAND.primary }}
       >
         + Nueva versión
       </button>
@@ -96,6 +131,44 @@ export default function NuevaVersionButton() {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Mes inicio *</label>
+              <input
+                type="month"
+                required
+                value={mesInicio}
+                onChange={(e) => setMesInicio(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Mes fin *</label>
+              <input
+                type="month"
+                required
+                value={mesFin}
+                onChange={(e) => setMesFin(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div
+            className="text-xs px-3 py-2 rounded"
+            style={{
+              backgroundColor: rangoOk ? BRAND.primarySoft : "#FEF2F2",
+              color: rangoOk ? BRAND.ink : "#991B1B",
+            }}
+          >
+            {rangoOk ? (
+              <>
+                <strong>{meses}</strong> meses · {formatRango(fechaInicioISO, fechaFinISO)}
+              </>
+            ) : (
+              "La fecha de fin debe ser igual o posterior a la de inicio."
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -123,10 +196,6 @@ export default function NuevaVersionButton() {
             </label>
           </div>
 
-          <div className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded">
-            Período fijo: Sep 2025 – Ago 2026 (12 meses)
-          </div>
-
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -137,8 +206,9 @@ export default function NuevaVersionButton() {
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+              disabled={loading || !rangoOk}
+              className="px-4 py-2 text-sm text-white rounded hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: BRAND.primary }}
             >
               {loading ? "Creando..." : "Crear versión"}
             </button>
