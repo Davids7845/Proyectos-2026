@@ -12,8 +12,8 @@
 // Usado por ORD 3 (Crudo), ORD 4 (Carbón), ORD 5 (Clinker), ORD 6 (Cemento UG),
 // ORD 7 (Cemento ART) y futuros procesos con la misma estructura.
 
-import { fn as calcMpReceta }       from "@/lib/calc/formulas/costo_mp_receta";
-import { fn as calcEnergiaProceso } from "@/lib/calc/formulas/costo_energia_proceso";
+import { fn as calcMpReceta } from "@/lib/calc/formulas/costo_mp_receta";
+import { logComponentesAuxiliares } from "./_componentes_proceso";
 import type {
   CalcContext,
   CalcWriter,
@@ -210,72 +210,13 @@ export async function runRecetaProcess(
     rol_dependencias: rolDeps,
   });
 
-  // ─── Componentes no-MP (Fase 1.5) ────────────────────────────────────────
-  let costo_energia: number | null = null;
-  let energiaCalcId: UUID | null = null;
-  if (opts.conEnergia) {
-    // Fase 1.7: override de Excel Presupuesto (Costo!N{row}/O{row}) — el budget
-    // tiene kWh/Ton y precio efectivo COP/kWh pasteados; usar esos si existen.
-    const enOver = ctx.energiaOverrideByKey?.get(`${proceso.id}|${periodo}`);
-    if (enOver) {
-      const valor = enOver.kwh_ton * enOver.precio_efectivo;
-      costo_energia = valor;
-      energiaCalcId = await writer.log({
-        calculo_tipo: "costo_energia_proceso",
-        proceso_id: proceso.id,
-        periodo,
-        concepto: `Costo Energía Eléctrica — ${proceso.nombre} (override budget)`,
-        valor_resultado: valor,
-        unidad: "COP/Ton",
-        formula_codigo: "COSTO_ENERGIA_PROCESO_v1",
-        formula_expresion: `kwh_ton(${enOver.kwh_ton}) × precio_efectivo(${enOver.precio_efectivo}) = ${valor}`,
-        parametros_entrada: {
-          kwh_ton: enOver.kwh_ton, precio_efectivo: enOver.precio_efectivo,
-          fuente: "Excel Costo!N/O override",
-        },
-        nivel_jerarquia: 1,
-      });
-    }
-    const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
-    if (!enOver && paramsEner) {
-      const kwhMap = paramsEner.kwh_ton_proceso ?? {};
-      const candidates = [
-        opts.energiaKey,
-        proceso.material?.toLowerCase(),
-        proceso.nombre?.toLowerCase(),
-      ].filter((x): x is string => typeof x === "string");
-      let kwh = 0;
-      for (const c of candidates) {
-        if (kwhMap[c] != null) { kwh = kwhMap[c]; break; }
-      }
-      if (kwh > 0) {
-        const f = calcEnergiaProceso({
-          kwh_ton: kwh,
-          precio_contrato:      paramsEner.precio_contrato      ?? 0,
-          precio_restricciones: paramsEner.precio_restricciones ?? 0,
-          cargos_fijos:         paramsEner.cargos_fijos         ?? 0,
-        });
-        costo_energia = f.valor;
-        energiaCalcId = await writer.log({
-          calculo_tipo: "costo_energia_proceso",
-          proceso_id: proceso.id,
-          periodo,
-          concepto: `Costo Energía Eléctrica — ${proceso.nombre}`,
-          valor_resultado: f.valor,
-          unidad: "COP/Ton",
-          formula_codigo: "COSTO_ENERGIA_PROCESO_v1",
-          formula_expresion: f.expresion_evaluada,
-          parametros_entrada: {
-            kwh_ton: kwh,
-            precio_contrato: paramsEner.precio_contrato,
-            precio_restricciones: paramsEner.precio_restricciones,
-            cargos_fijos: paramsEner.cargos_fijos,
-          },
-          nivel_jerarquia: 1,
-        });
-      }
-    }
-  }
+  // ─── Componentes no-MP: energía + costos fijos ───────────────────────────
+  const aux = await logComponentesAuxiliares(
+    { ctx, proceso, periodo, writer },
+    { conEnergia: opts.conEnergia, energiaKey: opts.energiaKey, conCostosFijos: false },
+  );
+  const costo_energia  = aux.costo_energia;
+  const energiaCalcId  = aux.energiaCalcId;
 
   // ─── Componentes derivados extra (Fase 1.6) ──────────────────────────────
   // ORD 5 (Clinker) usa esto para sumar Carbón Molido + Alternos cuyo consumo
@@ -340,38 +281,15 @@ export async function runRecetaProcess(
     void paramsEner;
   }
 
-  // ─── Costos fijos (Fase 1.6.2): repuestos + servicios + regalías ─────────
-  // Cada item de `ctx.costosFijosByProcesoPeriodo` se loguea y suma al total.
-  // La suma se reporta en `costo_servicios` (bucket genérico Fase 1; en Fase 2
-  // se desglosará en repuestos vs servicios vs otros con sus propios formuladores).
-  let costo_servicios: number | null = null;
-  const fijosCalcIds: UUID[] = [];
-  const fijosRolDeps: Record<string, string> = {};
-  if (opts.conCostosFijos) {
-    const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
-    if (items.length > 0) {
-      let suma = 0;
-      for (const it of items) {
-        if (it.costo_por_ton === 0) continue;
-        suma += it.costo_por_ton;
-        const id = await writer.log({
-          calculo_tipo: "costo_fijo_proceso",
-          proceso_id: proceso.id,
-          periodo,
-          concepto: `${it.nombre} (costo fijo)`,
-          valor_resultado: it.costo_por_ton,
-          unidad: "COP/Ton",
-          formula_codigo: "COSTO_PROCESO_SUMA_v1",
-          formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
-          parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
-          nivel_jerarquia: 1,
-        });
-        fijosCalcIds.push(id);
-        fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
-      }
-      if (suma > 0) costo_servicios = suma;
-    }
-  }
+  const auxFijos = opts.conCostosFijos
+    ? await logComponentesAuxiliares(
+        { ctx, proceso, periodo, writer },
+        { conEnergia: false, conCostosFijos: true },
+      )
+    : null;
+  const costo_servicios = auxFijos?.costo_servicios ?? null;
+  const fijosCalcIds    = auxFijos?.fijosCalcIds    ?? [];
+  const fijosRolDeps    = auxFijos?.fijosRolDeps    ?? {};
 
   const sumaExtras = (costo_energia ?? 0) + (costo_combustible ?? 0) + (costo_servicios ?? 0);
   const costo_total = mpResult.valor + sumaExtras;

@@ -14,8 +14,9 @@
 // El % Consumo de caliza/martillo se busca por material CALTLVTRIT con proveedor 'caliza' y 'martillo'.
 // La receta Prehomo está en `recetas` para proceso_id=ord1 y producto_id=MEZCPREHO (Mezcla Prehomo).
 
-import { fn as calcCalizaMartillo }   from "@/lib/calc/formulas/costo_caliza_martillo";
-import { fn as calcPrehomo }          from "@/lib/calc/formulas/costo_prehomo";
+import { fn as calcCalizaMartillo }  from "@/lib/calc/formulas/costo_caliza_martillo";
+import { fn as calcPrehomo }         from "@/lib/calc/formulas/costo_prehomo";
+import { logComponentesAuxiliares }  from "./_componentes_proceso";
 import type {
   CalcContext,
   ProcesoCalculator,
@@ -172,31 +173,14 @@ export class Ord01Trituracion implements ProcesoCalculator {
     });
 
     // ─── 4) Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
-    // Nota: la energía de Trituración ya está embebida en calcPrehomo (los precios
-    // de caliza y arcilla en preciosByMatPeriodo incluyen el componente energético),
-    // por lo que NO se agrega un bloque de energía explícito aquí.
-    let costo_servicios: number | null = null;
-    const fijosCalcIds: UUID[] = [];
-    const fijosRolDeps: Record<string, string> = {};
-    const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
-    for (const it of items) {
-      if (it.costo_por_ton === 0) continue;
-      const id = await writer.log({
-        calculo_tipo: "costo_fijo_proceso",
-        proceso_id: proceso.id,
-        periodo,
-        concepto: it.nombre,
-        valor_resultado: it.costo_por_ton,
-        unidad: "COP/Ton",
-        formula_codigo: "COSTO_PROCESO_SUMA_v1",
-        formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
-        parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
-        nivel_jerarquia: 1,
-      });
-      fijosCalcIds.push(id);
-      fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
-      costo_servicios = (costo_servicios ?? 0) + it.costo_por_ton;
-    }
+    // Nota: la energía ya está embebida en calcPrehomo; NO se agrega bloque energía.
+    const aux = await logComponentesAuxiliares(
+      { ctx, proceso, periodo, writer },
+      { conEnergia: false, conCostosFijos: true },
+    );
+    const costo_servicios = aux.costo_servicios;
+    const fijosCalcIds    = aux.fijosCalcIds;
+    const fijosRolDeps    = aux.fijosRolDeps;
 
     // ─── 5) Costo total proceso ────────────────────────────────────────
     const costo_total = f2.valor + (costo_servicios ?? 0);

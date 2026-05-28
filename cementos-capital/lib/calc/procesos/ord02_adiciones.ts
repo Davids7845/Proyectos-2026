@@ -3,8 +3,8 @@
 // Componentes: MP (Caliza Triturada) + Energía + Barras y Placas +
 //              Material Dique + Desmantelamiento + Regalías.
 
-import { fn as calcMezcla }           from "@/lib/calc/formulas/costo_mezcla_ponderada";
-import { fn as calcEnergiaProceso }   from "@/lib/calc/formulas/costo_energia_proceso";
+import { fn as calcMezcla }          from "@/lib/calc/formulas/costo_mezcla_ponderada";
+import { logComponentesAuxiliares }  from "./_componentes_proceso";
 import type {
   CalcWriter,
   ProcesoCalculator,
@@ -87,77 +87,16 @@ export class Ord02Adiciones implements ProcesoCalculator {
       nivel_jerarquia: 1,
     });
 
-    // ─── Energía eléctrica ─────────────────────────────────────────────
-    let costo_energia: number | null = null;
-    let energiaCalcId: UUID | null = null;
-    const enOver = ctx.energiaOverrideByKey?.get(`${proceso.id}|${periodo}`);
-    if (enOver && enOver.kwh_ton > 0) {
-      const valor = enOver.kwh_ton * enOver.precio_efectivo;
-      costo_energia = valor;
-      energiaCalcId = await writer.log({
-        calculo_tipo: "costo_energia_proceso",
-        proceso_id: proceso.id,
-        periodo,
-        concepto: `Costo Energía Eléctrica — ${proceso.nombre}`,
-        valor_resultado: valor,
-        unidad: "COP/Ton",
-        formula_codigo: "COSTO_ENERGIA_PROCESO_v1",
-        formula_expresion: `kwh_ton(${enOver.kwh_ton}) × precio_efectivo(${enOver.precio_efectivo}) = ${valor}`,
-        parametros_entrada: { kwh_ton: enOver.kwh_ton, precio_efectivo: enOver.precio_efectivo },
-        nivel_jerarquia: 1,
-      });
-    } else {
-      const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
-      if (paramsEner) {
-        const kwhMap = paramsEner.kwh_ton_proceso ?? {};
-        const kwh = kwhMap["adiciones"] ?? 0;
-        if (kwh > 0) {
-          const f2 = calcEnergiaProceso({
-            kwh_ton: kwh,
-            precio_contrato:      paramsEner.precio_contrato      ?? 0,
-            precio_restricciones: paramsEner.precio_restricciones ?? 0,
-            cargos_fijos:         paramsEner.cargos_fijos         ?? 0,
-          });
-          costo_energia = f2.valor;
-          energiaCalcId = await writer.log({
-            calculo_tipo: "costo_energia_proceso",
-            proceso_id: proceso.id,
-            periodo,
-            concepto: `Costo Energía Eléctrica — ${proceso.nombre}`,
-            valor_resultado: f2.valor,
-            unidad: "COP/Ton",
-            formula_codigo: "COSTO_ENERGIA_PROCESO_v1",
-            formula_expresion: f2.expresion_evaluada,
-            parametros_entrada: { kwh_ton: kwh, precio_contrato: paramsEner.precio_contrato, precio_restricciones: paramsEner.precio_restricciones, cargos_fijos: paramsEner.cargos_fijos },
-            nivel_jerarquia: 1,
-          });
-        }
-      }
-    }
-
-    // ─── Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
-    let costo_servicios: number | null = null;
-    const fijosCalcIds: UUID[] = [];
-    const fijosRolDeps: Record<string, string> = {};
-    const fijoItems = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
-    for (const it of fijoItems) {
-      if (it.costo_por_ton === 0) continue;
-      const id = await writer.log({
-        calculo_tipo: "costo_fijo_proceso",
-        proceso_id: proceso.id,
-        periodo,
-        concepto: it.nombre,
-        valor_resultado: it.costo_por_ton,
-        unidad: "COP/Ton",
-        formula_codigo: "COSTO_PROCESO_SUMA_v1",
-        formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
-        parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
-        nivel_jerarquia: 1,
-      });
-      fijosCalcIds.push(id);
-      fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
-      costo_servicios = (costo_servicios ?? 0) + it.costo_por_ton;
-    }
+    // ─── Energía eléctrica + Costos fijos ───────────────────────────────
+    const aux = await logComponentesAuxiliares(
+      { ctx, proceso, periodo, writer },
+      { conEnergia: true, energiaKey: "adiciones", conCostosFijos: true },
+    );
+    const costo_energia   = aux.costo_energia;
+    const energiaCalcId   = aux.energiaCalcId;
+    const costo_servicios = aux.costo_servicios;
+    const fijosCalcIds    = aux.fijosCalcIds;
+    const fijosRolDeps    = aux.fijosRolDeps;
 
     // ─── Total ────────────────────────────────────────────────────────
     const costo_total = f.valor + (costo_energia ?? 0) + (costo_servicios ?? 0);
