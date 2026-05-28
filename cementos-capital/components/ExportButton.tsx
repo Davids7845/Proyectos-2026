@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { BRAND } from "@/lib/ui/colors";
 
-export default function ExportButton({ versionId }: { versionId: string }) {
+export default function ExportButton({ versionId, compareVersionId }: { versionId: string; compareVersionId?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,7 +11,10 @@ export default function ExportButton({ versionId }: { versionId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/versiones/${versionId}/export`, { method: "POST" });
+      const endpoint = compareVersionId
+        ? `/api/versiones/${versionId}/export?compare=${compareVersionId}`
+        : `/api/versiones/${versionId}/export`;
+      const res = await fetch(endpoint, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Error ${res.status}`);
@@ -38,7 +42,8 @@ export default function ExportButton({ versionId }: { versionId: string }) {
       <button
         onClick={handleExport}
         disabled={loading}
-        className="text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5"
+        className="text-sm text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed rounded px-3 py-1.5"
+        style={{ backgroundColor: BRAND.primary }}
       >
         {loading ? "Exportando…" : "Exportar a Excel"}
       </button>

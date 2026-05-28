@@ -11,7 +11,7 @@ function fmtPeriodo(p: string) {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: versionId } = await params;
@@ -20,9 +20,11 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "no autenticado" }, { status: 401 });
 
+  const compareIdParam = req.nextUrl.searchParams.get("compare");
+
   const { data: version } = await supabase
     .from("budget_versions")
-    .select("id, nombre, estado")
+    .select("id, nombre, estado, precios_fijos")
     .eq("id", versionId)
     .single();
   if (!version) return NextResponse.json({ error: "versión no encontrada" }, { status: 404 });
@@ -541,6 +543,268 @@ export async function POST(
       row.getCell(3).value = r.proceso?.nombre ?? "";
       row.getCell(8).value = r.costo_energia;
       row.getCell(8).numFmt = "#,##0"; row.getCell(8).alignment = { horizontal: "right" };
+    }
+  }
+
+  // ─── Hoja 12: Costo sin Consolidar ──────────────────────────────────────────
+  // Matriz costo/Ton igual a "Costo por Ton" pero anotando con 🔒 los procesos
+  // forzados por precios_fijos_overrides cuando version.precios_fijos = true.
+  const { data: pfOverrides } = await (supabase as any)
+    .from("precios_fijos_overrides")
+    .select("proceso_id, periodo")
+    .eq("version_id", versionId);
+  const fixedKeys = new Set<string>();
+  for (const pf of (pfOverrides ?? []) as Array<{ proceso_id: string; periodo: string }>) {
+    fixedKeys.add(`${pf.proceso_id}|${pf.periodo}`);
+  }
+
+  const shSinCons = wb.addWorksheet("Costo sin Consolidar", { views: [{ state: "frozen", xSplit: 1, ySplit: 2 }] });
+  shSinCons.getRow(1).getCell(1).value =
+    `Versión: ${version.nombre} — Modo: ${version.precios_fijos ? "Sin Consolidar (precios fijos activos)" : "Consolidado (cascada normal)"}`;
+  shSinCons.getRow(1).getCell(1).font = { bold: true, size: 12 };
+
+  const headerSC = shSinCons.getRow(2);
+  headerSC.getCell(1).value = "Proceso";
+  headerSC.getCell(1).font = { bold: true };
+  headerSC.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  periodos.forEach((per, i) => {
+    const cell = headerSC.getCell(i + 2);
+    cell.value = fmtPeriodo(per);
+    cell.font = { bold: true };
+    cell.alignment = { horizontal: "right" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+  });
+
+  let scIdx = 3;
+  for (const pid of filas) {
+    const meta = procesoMeta.get(pid)!;
+    const dataRow = shSinCons.getRow(scIdx++);
+    dataRow.getCell(1).value = `${meta.ord} - ${meta.nombre}`;
+    periodos.forEach((per, i) => {
+      const v = byProceso.get(pid)?.get(per);
+      const cell = dataRow.getCell(i + 2);
+      const isFixed = fixedKeys.has(`${pid}|${per}`);
+      cell.value = v != null ? v : null;
+      cell.numFmt = "#,##0";
+      cell.alignment = { horizontal: "right" };
+      if (isFixed) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F5F9" } };
+        cell.font = { bold: true, color: { argb: "FF0098BA" } };
+        cell.note = "Precio fijo (override) — no cascadea";
+      }
+    });
+  }
+  shSinCons.getColumn(1).width = 34;
+  periodos.forEach((_, i) => { shSinCons.getColumn(i + 2).width = 14; });
+
+  // ─── Hoja 13: Comparativo (Gráficas) ────────────────────────────────────────
+  // Bridge proceso×concepto entre la versión actual y otra versión (compare).
+  // Por defecto, usa la versión más reciente con run exitoso distinta a la actual.
+  let compareId: string | null = compareIdParam;
+  if (!compareId) {
+    const { data: candidatas } = await supabase
+      .from("budget_versions")
+      .select("id, nombre, creado_en")
+      .neq("id", versionId)
+      .order("creado_en", { ascending: false })
+      .limit(20);
+    for (const c of (candidatas ?? []) as Array<{ id: string }>) {
+      const { data: r } = await supabase
+        .from("calculation_runs")
+        .select("id")
+        .eq("version_id", c.id)
+        .eq("estado", "exitoso")
+        .limit(1)
+        .maybeSingle();
+      if (r?.id) { compareId = c.id; break; }
+    }
+  }
+
+  const shGraf = wb.addWorksheet("Gráficas");
+  shGraf.getColumn(1).width = 28;
+  shGraf.getColumn(2).width = 16;
+  shGraf.getColumn(3).width = 16;
+  shGraf.getColumn(4).width = 16;
+
+  if (!compareId) {
+    shGraf.getRow(1).getCell(1).value =
+      "No se encontró otra versión con run exitoso para comparar. Pasa ?compare=<versionId> al exportar.";
+    shGraf.getRow(1).getCell(1).font = { italic: true, color: { argb: "FF9CA3AF" } };
+  } else {
+    const { data: compVersion } = await supabase
+      .from("budget_versions")
+      .select("nombre")
+      .eq("id", compareId)
+      .maybeSingle();
+
+    shGraf.getRow(1).getCell(1).value = `Base: ${version.nombre}    →    Comp: ${compVersion?.nombre ?? compareId}`;
+    shGraf.getRow(1).getCell(1).font = { bold: true, size: 12 };
+
+    const productos: Array<{ key: string; ord: number; titulo: string }> = [
+      { key: "clinker",     ord: 5,  titulo: "Clínker" },
+      { key: "cemento-ug",  ord: 6,  titulo: "Cemento UG" },
+      { key: "cemento-art", ord: 7,  titulo: "Cemento ART" },
+      { key: "fibrocemento", ord: 16, titulo: "Fibrocemento" },
+    ];
+
+    const LOG_TIPOS = [
+      "precio_componente_directo",
+      "precio_componente_derivado",
+      "costo_energia_proceso",
+      "costo_componente_derivado_termico",
+      "costo_fijo_proceso",
+    ] as const;
+
+    const getLastRunIdFor = async (vid: string): Promise<string | null> => {
+      const { data } = await supabase
+        .from("calculation_runs")
+        .select("id")
+        .eq("version_id", vid)
+        .eq("estado", "exitoso")
+        .order("iniciado_en", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data?.id ?? null;
+    };
+
+    const [baseRunId, compRunId] = await Promise.all([getLastRunIdFor(versionId), getLastRunIdFor(compareId)]);
+
+    let grafRow = 3;
+    for (const prod of productos) {
+      const { data: proceso } = await supabase
+        .from("procesos")
+        .select("id, nombre")
+        .eq("ord", prod.ord)
+        .maybeSingle();
+
+      // Section header
+      const hdr = shGraf.getRow(grafRow++);
+      hdr.getCell(1).value = `${prod.ord} — ${proceso?.nombre ?? prod.titulo}`;
+      hdr.getCell(1).font = { bold: true, size: 11, color: { argb: "FF003865" } };
+      hdr.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F5F9" } };
+      hdr.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F5F9" } };
+      hdr.getCell(3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F5F9" } };
+      hdr.getCell(4).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F5F9" } };
+
+      const colHdr = shGraf.getRow(grafRow++);
+      colHdr.getCell(1).value = "Concepto";
+      colHdr.getCell(2).value = "Base";
+      colHdr.getCell(3).value = "Comparación";
+      colHdr.getCell(4).value = "Δ";
+      colHdr.font = { bold: true };
+      [2, 3, 4].forEach(c => { colHdr.getCell(c).alignment = { horizontal: "right" }; });
+
+      if (!proceso || !baseRunId || !compRunId) {
+        const r = shGraf.getRow(grafRow++);
+        r.getCell(1).value = "Sin datos suficientes para este producto";
+        r.getCell(1).font = { italic: true, color: { argb: "FF9CA3AF" } };
+        grafRow++;
+        continue;
+      }
+
+      const getLogsFor = async (runId: string) => {
+        const { data } = await supabase
+          .from("calculation_log")
+          .select("calculo_tipo, concepto, valor_resultado, material_id")
+          .eq("run_id", runId)
+          .eq("proceso_id", proceso!.id)
+          .in("calculo_tipo", [...LOG_TIPOS]);
+        return data ?? [];
+      };
+      const getPctFor = async (vid: string): Promise<Map<string, number>> => {
+        const { data } = await supabase
+          .from("recetas")
+          .select("periodo, receta_lineas(material_id, porcentaje)")
+          .eq("version_id", vid)
+          .eq("proceso_id", proceso!.id);
+        const map = new Map<string, number>();
+        for (const rec of data ?? []) {
+          for (const ln of (rec as any).receta_lineas ?? []) {
+            map.set(ln.material_id as string, Number(ln.porcentaje));
+          }
+        }
+        return map;
+      };
+
+      const [baseLogs, compLogs, basePct, compPct] = await Promise.all([
+        getLogsFor(baseRunId),
+        getLogsFor(compRunId),
+        getPctFor(versionId),
+        getPctFor(compareId),
+      ]);
+
+      // Resolve material names
+      const matIds = Array.from(new Set([...baseLogs, ...compLogs].map(l => l.material_id).filter(Boolean))) as string[];
+      const { data: matsGraf } = matIds.length > 0
+        ? await supabase.from("materiales").select("id, nombre").in("id", matIds)
+        : { data: [] };
+      const matNombreGraf = new Map<string, string>();
+      for (const m of matsGraf ?? []) matNombreGraf.set(m.id, m.nombre);
+
+      const costoLog = (log: any, pctMap: Map<string, number>): number => {
+        if (log.calculo_tipo === "precio_componente_directo" || log.calculo_tipo === "precio_componente_derivado") {
+          const pct = log.material_id ? (pctMap.get(log.material_id) ?? 0) : 0;
+          return Number(log.valor_resultado) * pct;
+        }
+        return Number(log.valor_resultado);
+      };
+      const labelLog = (log: any): string => {
+        if (log.material_id && matNombreGraf.has(log.material_id)) return matNombreGraf.get(log.material_id)!;
+        if (log.calculo_tipo === "costo_energia_proceso") return "Energía Eléctrica";
+        return String(log.concepto ?? log.calculo_tipo);
+      };
+
+      const baseMapG = new Map<string, number>();
+      for (const l of baseLogs) {
+        const k = labelLog(l);
+        baseMapG.set(k, (baseMapG.get(k) ?? 0) + costoLog(l, basePct));
+      }
+      const compMapG = new Map<string, number>();
+      for (const l of compLogs) {
+        const k = labelLog(l);
+        compMapG.set(k, (compMapG.get(k) ?? 0) + costoLog(l, compPct));
+      }
+
+      const allKeys = Array.from(new Set([...Array.from(baseMapG.keys()), ...Array.from(compMapG.keys())]))
+        .sort((a, b) => Math.abs((compMapG.get(b) ?? 0) - (baseMapG.get(b) ?? 0)) - Math.abs((compMapG.get(a) ?? 0) - (baseMapG.get(a) ?? 0)));
+
+      let totalBase = 0, totalComp = 0;
+      for (const k of allKeys) {
+        const b = baseMapG.get(k) ?? 0;
+        const c = compMapG.get(k) ?? 0;
+        totalBase += b; totalComp += c;
+        const r = shGraf.getRow(grafRow++);
+        r.getCell(1).value = k;
+        r.getCell(2).value = b || null;
+        r.getCell(2).numFmt = "#,##0"; r.getCell(2).alignment = { horizontal: "right" };
+        r.getCell(3).value = c || null;
+        r.getCell(3).numFmt = "#,##0"; r.getCell(3).alignment = { horizontal: "right" };
+        r.getCell(4).value = (c - b) || null;
+        r.getCell(4).numFmt = "#,##0;[Red]-#,##0";
+        r.getCell(4).alignment = { horizontal: "right" };
+      }
+
+      // Total row
+      const totalR = shGraf.getRow(grafRow++);
+      totalR.getCell(1).value = "TOTAL";
+      totalR.getCell(1).font = { bold: true };
+      totalR.getCell(2).value = totalBase || null;
+      totalR.getCell(2).numFmt = "#,##0";
+      totalR.getCell(2).alignment = { horizontal: "right" };
+      totalR.getCell(2).font = { bold: true };
+      totalR.getCell(3).value = totalComp || null;
+      totalR.getCell(3).numFmt = "#,##0";
+      totalR.getCell(3).alignment = { horizontal: "right" };
+      totalR.getCell(3).font = { bold: true };
+      totalR.getCell(4).value = (totalComp - totalBase) || null;
+      totalR.getCell(4).numFmt = "#,##0;[Red]-#,##0";
+      totalR.getCell(4).alignment = { horizontal: "right" };
+      totalR.getCell(4).font = { bold: true };
+      [1, 2, 3, 4].forEach(c => {
+        totalR.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F9FB" } };
+      });
+
+      grafRow++; // blank row separator
     }
   }
 
