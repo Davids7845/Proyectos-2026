@@ -20,12 +20,14 @@ const PERIODO = "2026-01-01";
 const PROC6_ID = "proc-6";
 const PROC7_ID = "proc-7";
 
-const MAT_CEM_UG_ID  = "mat-cem-ug";
-const MAT_CEM_ART_ID = "mat-cem-art";
-const MAT_SACO_50_ID = "mat-saco-50";
-const MAT_SACO_42_ID = "mat-saco-42";
-const MAT_SACO_25_ID = "mat-saco-25";
-const MAT_CARGUE_ID  = "mat-cargue-cem";
+const MAT_CEM_UG_ID    = "mat-cem-ug";
+const MAT_CEM_ART_ID   = "mat-cem-art";
+const MAT_SACO_50_ID   = "mat-saco-50";
+const MAT_SACO_42_ID   = "mat-saco-42";
+const MAT_SACO_25_ID   = "mat-saco-25";
+const MAT_SACO_42_ART_ID = "mat-saco-42-art";
+const MAT_SACO_50_TPX_ID = "mat-saco-50-tpx";
+const MAT_CARGUE_ID    = "mat-cargue-cem";
 
 const COSTO_GRANEL_UG  = 250_000;
 const COSTO_GRANEL_ART = 260_000;
@@ -59,21 +61,25 @@ function buildCtx(
   ];
 
   const matsList = [
-    { id: MAT_CEM_UG_ID,  codigo: "CEM_UG",     nombre: "Cemento UG (Granel)",     unidad_base: "T" },
-    { id: MAT_CEM_ART_ID, codigo: "CEM_ART",     nombre: "Cemento ART (Granel)",    unidad_base: "T" },
-    { id: MAT_SACO_50_ID, codigo: "SACO_50KG",   nombre: "Saco 50 kg",              unidad_base: "UN" },
-    { id: MAT_SACO_42_ID, codigo: "SACO_42_5KG", nombre: "Saco 42,5 kg",            unidad_base: "UN" },
-    { id: MAT_SACO_25_ID, codigo: "SACO_25KG",   nombre: "Saco 25 kg",              unidad_base: "UN" },
-    { id: MAT_CARGUE_ID,  codigo: "CARGUE_CEM",  nombre: "Empaque y Cargue Cemento",unidad_base: "T" },
+    { id: MAT_CEM_UG_ID,      codigo: "CEM_UG",      nombre: "Cemento UG (Granel)",     unidad_base: "T" },
+    { id: MAT_CEM_ART_ID,     codigo: "CEM_ART",     nombre: "Cemento ART (Granel)",    unidad_base: "T" },
+    { id: MAT_SACO_50_ID,     codigo: "SACO_50KG",   nombre: "Saco 50 kg",              unidad_base: "UN" },
+    { id: MAT_SACO_42_ID,     codigo: "SACO_42_5KG", nombre: "Saco 42,5 kg",            unidad_base: "UN" },
+    { id: MAT_SACO_25_ID,     codigo: "SACO_25KG",   nombre: "Saco 25 kg",              unidad_base: "UN" },
+    { id: MAT_SACO_42_ART_ID, codigo: "SACO_42_ART", nombre: "Saco 42,5 Kg ART",        unidad_base: "UN" },
+    { id: MAT_SACO_50_TPX_ID, codigo: "SACO_50_TPX", nombre: "Saco 50 Kg Topex",        unidad_base: "UN" },
+    { id: MAT_CARGUE_ID,      codigo: "CARGUE_CEM",  nombre: "Empaque y Cargue Cemento",unidad_base: "T" },
   ];
   const materialesById     = new Map(matsList.map(m => [m.id, m]));
   const materialesByCodigo = new Map(matsList.map(m => [m.codigo, m]));
 
   const preciosByMatPeriodo = new Map([
-    [`${MAT_SACO_50_ID}|${PERIODO}|`, { material_id: MAT_SACO_50_ID, proveedor: null, periodo: PERIODO, precio: 800,  unidad: "COP/UN" }],
-    [`${MAT_SACO_42_ID}|${PERIODO}|`, { material_id: MAT_SACO_42_ID, proveedor: null, periodo: PERIODO, precio: 720,  unidad: "COP/UN" }],
-    [`${MAT_SACO_25_ID}|${PERIODO}|`, { material_id: MAT_SACO_25_ID, proveedor: null, periodo: PERIODO, precio: 500,  unidad: "COP/UN" }],
-    [`${MAT_CARGUE_ID}|${PERIODO}|`,  { material_id: MAT_CARGUE_ID,  proveedor: null, periodo: PERIODO, precio: 8500, unidad: "COP/Ton" }],
+    [`${MAT_SACO_50_ID}|${PERIODO}|`,     { material_id: MAT_SACO_50_ID,     proveedor: null, periodo: PERIODO, precio: 800,  unidad: "COP/UN" }],
+    [`${MAT_SACO_42_ID}|${PERIODO}|`,     { material_id: MAT_SACO_42_ID,     proveedor: null, periodo: PERIODO, precio: 720,  unidad: "COP/UN" }],
+    [`${MAT_SACO_25_ID}|${PERIODO}|`,     { material_id: MAT_SACO_25_ID,     proveedor: null, periodo: PERIODO, precio: 500,  unidad: "COP/UN" }],
+    [`${MAT_SACO_42_ART_ID}|${PERIODO}|`, { material_id: MAT_SACO_42_ART_ID, proveedor: null, periodo: PERIODO, precio: 720,  unidad: "COP/UN" }],
+    [`${MAT_SACO_50_TPX_ID}|${PERIODO}|`, { material_id: MAT_SACO_50_TPX_ID, proveedor: null, periodo: PERIODO, precio: 800,  unidad: "COP/UN" }],
+    [`${MAT_CARGUE_ID}|${PERIODO}|`,      { material_id: MAT_CARGUE_ID,      proveedor: null, periodo: PERIODO, precio: 8500, unidad: "COP/Ton" }],
   ]);
 
   const recetasByProcesoPeriodo = new Map([
@@ -268,10 +274,11 @@ describe("Runner ORD 19 — Cemento Big Bag 1,5 T", () => {
     { material_id: MAT_CARGUE_ID,  porcentaje: 1.0,          orden: 3 },
   ];
 
-  it("Arrastra CEM_UG de ORD 6 + bolsa + cargue", async () => {
+  it("Arrastra CEM_UG de ORD 6 + cargue (sin bolsa — material no sembrado aún)", async () => {
     const ctx = buildCtxUg(PROC19, RECETA);
     const r19 = await new Ord19CementoBigBag().run({ ctx, proceso: PROC19, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 1 * COSTO_GRANEL_UG + (1000 / 1500) * 800 + 1 * 8500;
+    // Big Bag container material not seeded yet — cost = granel + cargue only
+    const expected = 1 * COSTO_GRANEL_UG + 1 * 8500;
     expect(r19.costo_total).toBeCloseTo(expected, 2);
   });
 });

@@ -1,25 +1,23 @@
-// ORD 15 — Cemento UG TP (transporte propio / granel en camión)
-// Sin saco; receta: CEM_UG (arrastre ORD 6) + CARGUE_CK (servicio cargue) + otros.
+// ORD 15 — Cemento UG TP (despacho granel transporte propio)
+// No saco; recipe: CEM_UG (ORD 6) + optional CARGUE_CEM service
 
-import { runRecetaProcess } from "./_receta_base";
+import { runEmpaqueProcess } from "./_empaque_base";
 import type {
   CalcContext, CalcWriter, Periodo, ProcesoCalculator, ProcesoMeta, ProcesoResult,
 } from "@/lib/calc/engine/context";
-
-const DERIVED_BY_CODIGO: Record<string, number> = {
-  CEM_UG: 6,
-};
 
 export class Ord15CementoUgTp implements ProcesoCalculator {
   ord = 15;
 
   async run(args: { ctx: CalcContext; proceso: ProcesoMeta; periodo: Periodo; writer: CalcWriter }): Promise<ProcesoResult> {
-    return runRecetaProcess(args, {
+    return runEmpaqueProcess(args, {
       errPrefix: "ORD15",
       productoNombre: "Cemento UG TP",
       calculoTipoMp: "costo_proceso_cemento_ug_tp",
       conceptoMp: "Costo Granel + Despacho — Cemento UG TP",
-      derivedByCodigo: DERIVED_BY_CODIGO,
+      granelOrd: 6,
+      granelCodigo: "CEM_UG",
+      serviceCodigo: "CARGUE_CEM",
     });
   }
 }

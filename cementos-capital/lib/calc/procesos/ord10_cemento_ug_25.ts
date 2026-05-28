@@ -1,7 +1,7 @@
 // ORD 10 — Cemento UG 25 kg empacado
-// Receta esperada: CEM_UG (pct=1.0, arrastre ORD 6) + SACO_25KG (40/ton) + CARGUE_CEM (pct=1.0).
+// Recipe: CEM_UG (ORD 6) + SACO_25KG (40/ton = 1000/25) + CARGUE_CEM
 
-import { runRecetaProcess } from "./_receta_base";
+import { runEmpaqueProcess } from "./_empaque_base";
 import type {
   CalcContext,
   CalcWriter,
@@ -10,10 +10,6 @@ import type {
   ProcesoMeta,
   ProcesoResult,
 } from "@/lib/calc/engine/context";
-
-const DERIVED_BY_CODIGO: Record<string, number> = {
-  CEM_UG: 6,
-};
 
 export class Ord10CementoUg25 implements ProcesoCalculator {
   ord = 10;
@@ -24,12 +20,16 @@ export class Ord10CementoUg25 implements ProcesoCalculator {
     periodo: Periodo;
     writer: CalcWriter;
   }): Promise<ProcesoResult> {
-    return runRecetaProcess(args, {
+    return runEmpaqueProcess(args, {
       errPrefix: "ORD10",
       productoNombre: "Cemento UG 25 kg",
       calculoTipoMp: "costo_proceso_empaque_ug_25",
       conceptoMp: "Costo Granel + Empaque — Cemento UG 25 kg",
-      derivedByCodigo: DERIVED_BY_CODIGO,
+      granelOrd: 6,
+      granelCodigo: "CEM_UG",
+      sacoCodigo: "SACO_25KG",
+      sacosPorTon: 40,
+      serviceCodigo: "CARGUE_CEM",
     });
   }
 }

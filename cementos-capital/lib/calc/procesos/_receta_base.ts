@@ -157,9 +157,23 @@ export async function runRecetaProcess(
         });
       } else {
         const ki = `${mat.id}|${periodo}|`;
-        const p = ctx.preciosByMatPeriodo.get(ki);
-        if (!p) throw new Error(`${errPrefix} ${periodo}: falta precio para ${mat.codigo}`);
-        precio = p.precio;
+        // When a material has no price, try known equivalents. This covers the
+        // common case where Excel imports caliza as CALTLVTRIT or yeso by provider.
+        const PRECIO_FALLBACKS: Record<string, string[]> = {
+          CALIZATRI: ["CALTLVTRIT"],
+          YESO00001: ["YESO_PRADA", "YESO_MIRAND"],
+        };
+        let pFound = ctx.preciosByMatPeriodo.get(ki);
+        if (!pFound) {
+          for (const fbCode of PRECIO_FALLBACKS[mat.codigo] ?? []) {
+            const fbMat = ctx.materialesByCodigo.get(fbCode);
+            if (!fbMat) continue;
+            pFound = ctx.preciosByMatPeriodo.get(`${fbMat.id}|${periodo}|`);
+            if (pFound) break;
+          }
+        }
+        if (!pFound) throw new Error(`${errPrefix} ${periodo}: falta precio para ${mat.codigo}`);
+        precio = pFound.precio;
 
         precioCalcId = await writer.log({
           calculo_tipo: "precio_componente_directo",
