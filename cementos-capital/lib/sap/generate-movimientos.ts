@@ -21,6 +21,11 @@ const FIJO_CLASE_BY_CODIGO: Record<string, string> = {
   MAT_DIQUE:         "7355250321",
   DESMANT_TRIT:      "7495700001",
   REGALIAS:          "7495700001",
+  // ORD 2 — Adiciones
+  BARRAS_PLAC_AD:    "7355250320",
+  MAT_DIQUE_AD:      "7355250321",
+  DESMANT_AD:        "7495700001",
+  REGALIAS_AD:       "7495700001",
   // ORD 3 — Molienda de Crudo
   CUERPOS_MOL_CR:    "7355250320",
   LAMINAS_CR:        "7355250321",
@@ -48,6 +53,10 @@ const FIJO_CLASE_BY_CODIGO: Record<string, string> = {
   CUERPOS_MOL_FIB:   "7355250320",
   PLACAS_SEG_FIB:    "7355250320",
   GASOIL_FIB:        "7355050105",
+  // ORD 20 — Combustibles Alternos
+  CARGUE_ALT:        "7355250324",
+  DESCARGUE_ALT:     "7355250325",
+  VARIABLES_ALT:     "7355250320",
 };
 
 // Calculo tipos que representan componentes individuales (excluye agregados)

@@ -24,6 +24,9 @@ export class Ord20CombustiblesAlternos implements ProcesoCalculator {
       calculoTipoMp: "costo_mp_combustibles_alternos",
       conceptoMp: "Costo Materia Prima — Combustibles Alternos",
       derivedByCodigo: {}, // CDR, TDF, BRIQUETAS son todos compras directas
+      conEnergia: true,
+      energiaKey: "combustibles alternos",
+      conCostosFijos: true,
     });
   }
 }

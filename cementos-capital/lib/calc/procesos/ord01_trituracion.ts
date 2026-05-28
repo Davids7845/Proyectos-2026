@@ -14,8 +14,8 @@
 // El % Consumo de caliza/martillo se busca por material CALTLVTRIT con proveedor 'caliza' y 'martillo'.
 // La receta Prehomo está en `recetas` para proceso_id=ord1 y producto_id=MEZCPREHO (Mezcla Prehomo).
 
-import { fn as calcCalizaMartillo } from "@/lib/calc/formulas/costo_caliza_martillo";
-import { fn as calcPrehomo } from "@/lib/calc/formulas/costo_prehomo";
+import { fn as calcCalizaMartillo }   from "@/lib/calc/formulas/costo_caliza_martillo";
+import { fn as calcPrehomo }          from "@/lib/calc/formulas/costo_prehomo";
 import type {
   CalcContext,
   ProcesoCalculator,
@@ -171,40 +171,40 @@ export class Ord01Trituracion implements ProcesoCalculator {
       rol_dependencias: { [f1Id]: "precio_caliza_martillo" },
     });
 
-    // ─── 4) Costos fijos (Fase 1.6.2): Barras y Placas, Material Dique, Regalías, etc.
+    // ─── 4) Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
+    // Nota: la energía de Trituración ya está embebida en calcPrehomo (los precios
+    // de caliza y arcilla en preciosByMatPeriodo incluyen el componente energético),
+    // por lo que NO se agrega un bloque de energía explícito aquí.
     let costo_servicios: number | null = null;
     const fijosCalcIds: UUID[] = [];
     const fijosRolDeps: Record<string, string> = {};
     const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
-    if (items.length > 0) {
-      let suma = 0;
-      for (const it of items) {
-        if (it.costo_por_ton === 0) continue;
-        suma += it.costo_por_ton;
-        const id = await writer.log({
-          calculo_tipo: "costo_fijo_proceso",
-          proceso_id: proceso.id,
-          periodo,
-          concepto: `${it.nombre} (costo fijo)`,
-          valor_resultado: it.costo_por_ton,
-          unidad: "COP/Ton",
-          formula_codigo: "COSTO_PROCESO_SUMA_v1",
-          formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
-          parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
-          nivel_jerarquia: 1,
-        });
-        fijosCalcIds.push(id);
-        fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
-      }
-      if (suma > 0) costo_servicios = suma;
+    for (const it of items) {
+      if (it.costo_por_ton === 0) continue;
+      const id = await writer.log({
+        calculo_tipo: "costo_fijo_proceso",
+        proceso_id: proceso.id,
+        periodo,
+        concepto: it.nombre,
+        valor_resultado: it.costo_por_ton,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_PROCESO_SUMA_v1",
+        formula_expresion: `${it.codigo}: ${it.costo_por_ton} COP/Ton (Excel)`,
+        parametros_entrada: { codigo: it.codigo, costo_por_ton: it.costo_por_ton },
+        nivel_jerarquia: 1,
+      });
+      fijosCalcIds.push(id);
+      fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
+      costo_servicios = (costo_servicios ?? 0) + it.costo_por_ton;
     }
 
     // ─── 5) Costo total proceso ────────────────────────────────────────
     const costo_total = f2.valor + (costo_servicios ?? 0);
     const costo_por_ton = costo_total;
 
-    const dependeDeTotal: UUID[] = [f2Id, ...fijosCalcIds];
-    const rolDepsTotal: Record<string, string> = { [f2Id]: "costo_mp", ...fijosRolDeps };
+    const dependeDeTotal: UUID[] = [f2Id];
+    const rolDepsTotal: Record<string, string> = { [f2Id]: "costo_mp" };
+    for (const fid of fijosCalcIds) { dependeDeTotal.push(fid); rolDepsTotal[fid] = fijosRolDeps[fid]; }
 
     const totalId = await writer.log({
       calculo_tipo: "costo_proceso_total",
@@ -216,7 +216,7 @@ export class Ord01Trituracion implements ProcesoCalculator {
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
       formula_expresion:
         `costo_mp=${f2.valor}` +
-        (costo_servicios != null ? ` + costo_servicios=${costo_servicios}` : "") +
+        (costo_servicios != null ? ` + servicios=${costo_servicios}` : "") +
         ` → total=${costo_total}`,
       parametros_entrada: { costo_mp: f2.valor, costo_servicios },
       nivel_jerarquia: 0,

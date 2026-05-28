@@ -26,6 +26,12 @@ export const COSTOS_FIJOS_CONFIG: Record<
     { row: 12, codigo: "DESMANT_TRIT",     nombre: "Desmantelamiento" },
     { row: 13, codigo: "REGALIAS",         nombre: "Regalías" },
   ],
+  2: [
+    { row: 19, codigo: "BARRAS_PLAC_AD",  nombre: "Barras y Placas" },
+    { row: 20, codigo: "MAT_DIQUE_AD",    nombre: "Material Dique" },
+    { row: 21, codigo: "DESMANT_AD",      nombre: "Desmantelamiento" },
+    { row: 22, codigo: "REGALIAS_AD",     nombre: "Regalías" },
+  ],
   3: [
     { row: 30, codigo: "CUERPOS_MOL_CR",   nombre: "Cuerpos Moledores (Crudo)" },
     { row: 31, codigo: "LAMINAS_CR",       nombre: "Láminas (Crudo)" },
@@ -59,6 +65,11 @@ export const COSTOS_FIJOS_CONFIG: Record<
     { row: 163, codigo: "PLACAS_SEG_FIB",  nombre: "Placas y Segmentos (Fibrocemento)" },
     { row: 165, codigo: "GASOIL_FIB",      nombre: "Gasoil (Fibrocemento)" },
   ],
+  20: [
+    { row: 54, codigo: "CARGUE_ALT",    nombre: "Cargue" },
+    { row: 55, codigo: "DESCARGUE_ALT", nombre: "Descargue" },
+    { row: 57, codigo: "VARIABLES_ALT", nombre: "Variables" },
+  ],
 };
 
 /** Filas de energía eléctrica (kWh/Ton y precio) por ORD → row absoluto.
@@ -66,12 +77,14 @@ export const COSTOS_FIJOS_CONFIG: Record<
  */
 export const ENERGIA_OVERRIDE_ROWS: Record<number, number> = {
    1:   9,
+   2:  23,
    3:  33,
    4:  44,
    5:  66,
    6:  85,
    7: 101,
   16: 164,
+  20:  56,
 };
 
 /** Overrides de consumo (cascada) de materiales específicos para ORD 5. */
