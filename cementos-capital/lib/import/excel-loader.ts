@@ -2,6 +2,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ParsedExcel, LoadReport } from "./types";
+import { ALIAS_MATERIAL_EXCEL, normalizeMaterialName } from "./aliases_materiales";
 
 type Client = SupabaseClient<Database>;
 
@@ -18,7 +19,7 @@ function norm(s: string): string {
 interface MaterialIdx {
   byNombre: Map<string, string>;     // nombre normalizado → id
   byCodigo: Map<string, string>;     // código exacto → id
-  byAlias: Map<string, string>;      // alias normalizado → id
+  byAlias: Map<string, string>;      // alias normalizado → id (combina BD + hardcoded)
 }
 
 async function loadMaterialesIndex(supabase: Client): Promise<MaterialIdx> {
@@ -38,12 +39,24 @@ async function loadMaterialesIndex(supabase: Client): Promise<MaterialIdx> {
     .select("alias, material_id");
   const byAlias = new Map<string, string>();
   for (const a of aliasRows ?? []) byAlias.set(norm(a.alias), a.material_id);
+  // Fase 2d.1: aliases hardcoded de ALIAS_MATERIAL_EXCEL (excel-name → codigo BD)
+  // sobreescriben sólo si el código existe en BD; si no, se ignoran silenciosamente.
+  for (const [excelName, codigo] of Object.entries(ALIAS_MATERIAL_EXCEL)) {
+    const matId = byCodigo.get(codigo);
+    if (!matId) continue;
+    byAlias.set(norm(excelName), matId);
+  }
   return { byNombre, byCodigo, byAlias };
 }
 
 function resolveMaterial(idx: MaterialIdx, nombre: string): string | null {
   const n = norm(nombre);
-  return idx.byNombre.get(n) ?? idx.byAlias.get(n) ?? null;
+  // 1) lookup directo por nombre/alias normalizado
+  const direct = idx.byNombre.get(n) ?? idx.byAlias.get(n);
+  if (direct) return direct;
+  // 2) fallback: aplica normalizeMaterialName (quita "(PCI)") y reintenta
+  const nClean = norm(normalizeMaterialName(nombre));
+  return idx.byNombre.get(nClean) ?? idx.byAlias.get(nClean) ?? null;
 }
 
 export async function loadParsedExcel(
