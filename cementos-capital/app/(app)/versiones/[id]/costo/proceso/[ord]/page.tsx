@@ -90,7 +90,12 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
     pctByMat.set(ln.material_id, Number(ln.porcentaje));
   }
 
-  const matIds = (logRows ?? []).map(r => r.material_id).filter(Boolean) as string[];
+  // Une material_ids de logs + de la receta para que las filas custom de ORD 1/2
+  // (que descomponen el MP desde parametros_entrada) puedan resolver nombres.
+  const matIdsSet = new Set<string>();
+  for (const r of logRows ?? []) if (r.material_id) matIdsSet.add(r.material_id);
+  for (const ln of (recetaRaw as any)?.receta_lineas ?? []) matIdsSet.add(ln.material_id);
+  const matIds = Array.from(matIdsSet);
   const { data: materialesRaw } = matIds.length > 0
     ? await supabase.from("materiales").select("id, nombre, codigo").in("id", matIds)
     : { data: [] };
@@ -99,6 +104,12 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
 
   const componentes: ComponenteRow[] = [];
   let total_costo_ton = 0;
+
+  // Cache de materiales por código para resolver nombres en componentes derivados
+  // de ORD 1 y ORD 2 (que no se loguean como precio_componente_* sino dentro de
+  // parametros_entrada del log de MP).
+  const matByCodigo = new Map<string, { nombre: string }>();
+  for (const m of materialesRaw ?? []) matByCodigo.set(m.codigo, { nombre: m.nombre });
 
   for (const row of logRows ?? []) {
     const tipo = row.calculo_tipo as string;
@@ -157,7 +168,83 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
         tipo: "fijo",
       });
       total_costo_ton += row.valor_resultado;
+    } else if (tipo === "costo_mp_prehomo") {
+      // ORD 1: el MP se loguea como un sólo agregado; descomponemos en
+      // caliza (precio ponderado caliza+martillo) y arcilla.
+      const precioCaliza = Number(params.precio_caliza_martillo ?? 0);
+      const precioArcilla = Number(params.precio_arcilla ?? 0);
+      const pctCaliza = Number(params.pct_caliza ?? 0);
+      const pctArcilla = Number(params.pct_arcilla ?? 0);
+      const nombreCaliza = matByCodigo.get("CALTLVTRIT")?.nombre ?? "Caliza";
+      const nombreArcilla = matByCodigo.get("ARCTLVTRIT")?.nombre ?? "Arcilla";
+      const aporteCaliza = pctCaliza * precioCaliza;
+      const aporteArcilla = pctArcilla * precioArcilla;
+      if (aporteCaliza > 0) {
+        componentes.push({
+          concepto: nombreCaliza,
+          consumo: pctCaliza,
+          consumo_unidad: "Ton/Ton",
+          precio_unit: precioCaliza,
+          costo_por_ton: aporteCaliza,
+          calc_id: row.id,
+          tipo: "mp",
+        });
+        total_costo_ton += aporteCaliza;
+      }
+      if (aporteArcilla > 0) {
+        componentes.push({
+          concepto: nombreArcilla,
+          consumo: pctArcilla,
+          consumo_unidad: "Ton/Ton",
+          precio_unit: precioArcilla,
+          costo_por_ton: aporteArcilla,
+          calc_id: row.id,
+          tipo: "mp",
+        });
+        total_costo_ton += aporteArcilla;
+      }
+    } else if (tipo === "costo_mp_adiciones") {
+      // ORD 2: el MP se loguea con items_json (lista de {nombre, precio, pct}).
+      const items = Array.isArray(params.items) ? params.items as Array<{ nombre?: string; precio?: number; pct?: number }> : [];
+      for (const it of items) {
+        const pct = Number(it.pct ?? 0);
+        const precio = Number(it.precio ?? 0);
+        const aporte = pct * precio;
+        if (aporte <= 0) continue;
+        componentes.push({
+          concepto: String(it.nombre ?? "Componente"),
+          consumo: pct,
+          consumo_unidad: "Ton/Ton",
+          precio_unit: precio,
+          costo_por_ton: aporte,
+          calc_id: row.id,
+          tipo: "mp",
+        });
+        total_costo_ton += aporte;
+      }
+    } else if (tipo === "costo_referencia_cemento") {
+      // ORD 21 (Cementos): consolidador con promedio simple. Cada referencia
+      // aporta su costo / N para que la suma del desglose iguale el promedio.
+      componentes.push({
+        concepto: row.concepto ?? "Referencia",
+        consumo: 1,
+        consumo_unidad: "Ton/Ton",
+        precio_unit: row.valor_resultado,
+        costo_por_ton: row.valor_resultado, // se reescala abajo
+        calc_id: row.id,
+        tipo: "referencia",
+      });
     }
+  }
+
+  // ORD 21: reescalar referencias para que sumen el promedio.
+  const refs = componentes.filter(c => c.tipo === "referencia");
+  if (refs.length > 0) {
+    for (const r of refs) {
+      r.costo_por_ton = r.costo_por_ton / refs.length;
+      r.consumo = 1 / refs.length;
+    }
+    total_costo_ton += refs.reduce((s, r) => s + r.costo_por_ton, 0);
   }
 
   // Filtrar componentes con aporte > 0 para el donut
