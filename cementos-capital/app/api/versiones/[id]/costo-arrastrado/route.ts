@@ -1,10 +1,11 @@
 // GET /api/versiones/[id]/costo-arrastrado?periodo=YYYY-MM-DD
 //
-// Devuelve los 4 bloques del Costo Arrastrado para un período.
+// Devuelve los bloques del Costo Arrastrado para un período.
 //
 // Bloque CLINKER: Crudo (ORD 3) explotado × consumo de Crudo en Clinker
 //                 + componentes propios de Clinker (ORD 5) sin Crudo.
-// Bloques UG/ART/FIBRO: componentes directos de ORD 6, 7, 16 (sin explotar).
+// Resto de bloques: componentes directos de cada proceso (granel + empacados).
+//   ORDs incluidos: 6,7,8,9,10,11,13,14,16,17,18,22
 //
 // Columna Real: TODO — dejar vacío hasta integrar tabla costos_reales.
 
@@ -31,6 +32,7 @@ interface BloqueResult {
   nombre: string;
   componentes: ComponenteBloque[];
   total_costo: number;
+  es_clinker?: boolean;
 }
 
 const LOG_TIPOS = [
@@ -73,7 +75,7 @@ export async function GET(
   const { data: procesos } = await supabase
     .from("procesos")
     .select("id, ord, nombre")
-    .in("ord", [3, 5, 6, 7, 16])
+    .in("ord", [3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 22])
     .eq("activo", true);
   if (!procesos || procesos.length === 0) {
     return NextResponse.json({ error: "Procesos no encontrados" }, { status: 404 });
@@ -226,7 +228,7 @@ export async function GET(
     total_costo: clinkerComponentes.reduce((s, c) => s + c.total, 0),
   };
 
-  // ─── Bloques UG, ART, Fibro ─────────────────────────────────────────────────
+  // ─── Resto de bloques (todos los procesos excepto Crudo y Clinker) ──────────
   function buildBloqueSimple(ord: number): BloqueResult {
     const proc = byOrd.get(ord);
     const componentes: ComponenteBloque[] = [];
@@ -244,15 +246,20 @@ export async function GET(
     };
   }
 
+  // Construir todos los bloques de procesos no-clinker con datos
+  const ORDS_SIMPLES = [6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 22];
+  const bloquesSimples = ORDS_SIMPLES
+    .filter(ord => byOrd.has(ord))
+    .map(ord => buildBloqueSimple(ord))
+    .filter(b => b.componentes.length > 0);
+
   return NextResponse.json({
     version_id: versionId,
     periodo,
     consumo_crudo_en_clinker: consumo_crudo,
-    bloques: {
-      clinker: bloqueClinker,
-      cemento_ug: buildBloqueSimple(6),
-      cemento_art: buildBloqueSimple(7),
-      fibrocemento: buildBloqueSimple(16),
-    },
+    bloques: [
+      { ...bloqueClinker, es_clinker: true },
+      ...bloquesSimples,
+    ],
   });
 }

@@ -1,6 +1,7 @@
 // Vista Costo Arrastrado — réplica de la hoja "Costo Arrastrado" del Excel.
 //
-// 4 bloques: Clinker (Crudo explotado + componentes propios), Cemento UG, ART, Fibrocemento.
+// Bloque Clinker: Crudo explotado + componentes propios de Clinker.
+// Resto: todos los procesos finales (granel + empacados) que tienen datos calculados.
 // Columna Real: TODO — vacía hasta integrar costos_reales.
 
 import { createClient } from "@/lib/supabase/server";
@@ -23,18 +24,14 @@ interface BloqueResult {
   nombre: string;
   componentes: ComponenteBloque[];
   total_costo: number;
+  es_clinker?: boolean;
 }
 
 interface CostoArrastradoData {
   version_id: string;
   periodo: string;
   consumo_crudo_en_clinker: number;
-  bloques: {
-    clinker: BloqueResult;
-    cemento_ug: BloqueResult;
-    cemento_art: BloqueResult;
-    fibrocemento: BloqueResult;
-  };
+  bloques: BloqueResult[];
 }
 
 export default async function CostoArrastradoPage({
@@ -99,12 +96,14 @@ export default async function CostoArrastradoPage({
     );
   }
 
-  const bloqueList = [
-    { key: "clinker", bloque: data.bloques.clinker, color: BRAND.productos.clinker },
-    { key: "cemento_ug", bloque: data.bloques.cemento_ug, color: BRAND.productos.ug },
-    { key: "cemento_art", bloque: data.bloques.cemento_art, color: BRAND.productos.art },
-    { key: "fibrocemento", bloque: data.bloques.fibrocemento, color: BRAND.productos.fibro },
-  ];
+  const ORD_COLOR: Record<number, string> = {
+    5:  BRAND.productos.clinker,
+    6:  BRAND.productos.ug,   7:  BRAND.productos.art,
+    8:  BRAND.productos.ug,   9:  BRAND.productos.ug,  10: BRAND.productos.ug,
+    11: BRAND.productos.art,  13: BRAND.productos.art, 14: BRAND.productos.ug,
+    16: BRAND.productos.fibro, 17: BRAND.productos.ug,
+    18: BRAND.productos.art,  22: BRAND.productos.fibro,
+  };
 
   return (
     <div className="space-y-6">
@@ -135,29 +134,32 @@ export default async function CostoArrastradoPage({
 
       {/* KPIs resumen */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {bloqueList.map(({ key, bloque, color }) => (
-          <div
-            key={key}
-            className="bg-white rounded-xl shadow-sm p-4 border border-slate-200"
-            style={{ borderTop: `4px solid ${color}` }}
-          >
-            <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{bloque.nombre}</p>
-            <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
-              {formatCOP(bloque.total_costo)}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">COP/Ton</p>
-          </div>
-        ))}
+        {data.bloques.map(bloque => {
+          const color = ORD_COLOR[bloque.ord] ?? BRAND.primary;
+          return (
+            <div
+              key={bloque.ord}
+              className="bg-white rounded-xl shadow-sm p-4 border border-slate-200"
+              style={{ borderTop: `4px solid ${color}` }}
+            >
+              <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{bloque.nombre}</p>
+              <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
+                {formatCOP(bloque.total_costo)}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">COP/Ton</p>
+            </div>
+          );
+        })}
       </div>
 
       {/* Tablas por bloque */}
-      {bloqueList.map(({ key, bloque, color }) => (
-        <BloqueTabla key={key} bloque={bloque} color={color} />
+      {data.bloques.map(bloque => (
+        <BloqueTabla key={bloque.ord} bloque={bloque} color={ORD_COLOR[bloque.ord] ?? BRAND.primary} />
       ))}
 
       <p className="text-xs text-slate-400 italic">
-        Columna Real: pendiente integración costos_reales.
-        Los totales del Bloque Clinker incluyen Crudo explotado × factor de consumo ({data.consumo_crudo_en_clinker.toFixed(4)} ton/ton).
+        Columna Real: pendiente integración costos_reales. Factor Crudo en Clinker: {data.consumo_crudo_en_clinker.toFixed(4)} ton/ton.
+        Solo se muestran procesos con datos calculados para el período seleccionado.
       </p>
     </div>
   );
@@ -317,7 +319,7 @@ async function fetchCostoArrastrado(
   const { data: procesos } = await supabase
     .from("procesos")
     .select("id, ord, nombre")
-    .in("ord", [3, 5, 6, 7, 16])
+    .in("ord", [3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 22])
     .eq("activo", true);
   if (!procesos || procesos.length === 0) return null;
 
@@ -426,15 +428,19 @@ async function fetchCostoArrastrado(
     return { ord, nombre: proc?.nombre ?? `ORD ${ord}`, componentes: comps, total_costo: comps.reduce((s, c) => s + c.total, 0) };
   }
 
+  const ORDS_SIMPLES = [6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 22];
+  const bloquesSimples = ORDS_SIMPLES
+    .filter(ord => byOrd.has(ord))
+    .map(ord => buildSimple(ord))
+    .filter(b => b.componentes.length > 0);
+
   return {
     version_id: versionId,
     periodo,
     consumo_crudo_en_clinker: consumo_crudo,
-    bloques: {
-      clinker: { ord: 5, nombre: proc5?.nombre ?? "Clinkerización", componentes: clinkerComps, total_costo: clinkerComps.reduce((s, c) => s + c.total, 0) },
-      cemento_ug: buildSimple(6),
-      cemento_art: buildSimple(7),
-      fibrocemento: buildSimple(16),
-    },
+    bloques: [
+      { ord: 5, nombre: proc5?.nombre ?? "Clinkerización", componentes: clinkerComps, total_costo: clinkerComps.reduce((s, c) => s + c.total, 0), es_clinker: true },
+      ...bloquesSimples,
+    ],
   };
 }

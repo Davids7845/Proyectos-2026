@@ -501,7 +501,7 @@ export async function POST(
     const periodoCA = periodos[periodos.length - 1]; // último período disponible
     const shCA = wb.addWorksheet("CA Detalle");
 
-    const ORDS_CA = [3, 5, 6, 7, 16] as const;
+    const ORDS_CA = [3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 22] as const;
     const { data: procesosCA } = await supabase
       .from("procesos")
       .select("id, ord, nombre")
@@ -592,11 +592,13 @@ export async function POST(
 
     let caRow = 3;
 
+    // Todos los procesos excepto Crudo (ORD 3, solo input para Clinker)
     const BLOQUES_CA = [
       { label: "CLINKER (Crudo explotado + componentes propios)", ord: 5, explodeCrudo: true },
-      { label: "CEMENTO UG", ord: 6, explodeCrudo: false },
-      { label: "CEMENTO ART", ord: 7, explodeCrudo: false },
-      { label: "FIBROCEMENTO", ord: 16, explodeCrudo: false },
+      ...(procesosCA ?? [])
+        .filter((p: { ord: number }) => p.ord !== 3 && p.ord !== 5)
+        .sort((a: { ord: number }, b: { ord: number }) => a.ord - b.ord)
+        .map((p: { ord: number; nombre: string }) => ({ label: p.nombre.toUpperCase(), ord: p.ord, explodeCrudo: false })),
     ];
 
     // Crudo consumption in Clinker
@@ -635,6 +637,9 @@ export async function POST(
           if (comp) components.push({ ...comp, isSubrow: false });
         }
       }
+
+      // Skip blocks with no data
+      if (components.length === 0) { caRow--; continue; } // undo header row
 
       let totalBloque = 0;
       for (const comp of components) {

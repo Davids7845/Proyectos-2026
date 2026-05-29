@@ -28,7 +28,7 @@ export default async function ImportarPage({
       </nav>
       <h1 className="text-xl font-semibold text-gray-900 mb-1">Importar plantilla Excel</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Sube <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Nueva_Plantilla_Ppto_CV_V2.xlsx</code> — se leerá la hoja <strong>Datos</strong> (12 periodos Sep-2025 → Ago-2026).
+        Sube <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Nueva_Plantilla_Ppto_CV_V2.xlsx</code> — se leerá la hoja <strong>Datos</strong>. Se importan todos los periodos del rango de la versión (hasta 24 meses).
       </p>
 
       {version.estado !== "borrador" && (

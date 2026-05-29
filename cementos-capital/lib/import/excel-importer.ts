@@ -37,7 +37,7 @@ import {
 // los índices quedan así:
 //   row[0] = col B = Tipo / Concepto / Material
 //   row[1] = col C = UM (unidad)
-//   row[2..N] = cols D..S = periodos (16 fechas, sólo usamos los 12 primeros)
+//   row[2..N] = cols D..S = periodos (hasta 24 fechas, se importan las del rango de la versión)
 //
 // Secciones reconocidas (col B exactamente igual, col C vacía):
 //   Precios · % Consumo · Recetas · Humedades · Rotura · Ventas ·
