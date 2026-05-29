@@ -164,8 +164,6 @@ export default async function CostoArrastradoPage({
 }
 
 function BloqueTabla({ bloque, color }: { bloque: BloqueResult; color: string }) {
-  const UMBRAL_DIFF = 0.05; // 5% — usado cuando Real esté disponible
-
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
       <div

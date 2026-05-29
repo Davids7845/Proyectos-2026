@@ -31,7 +31,7 @@ export default function MaterilesAgregadosClient({ agregados: initialAgregados, 
   const [newOrigenId, setNewOrigenId] = useState<string>("");
   const [newPct, setNewPct] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending] = useTransition();
 
   function pctDisplay(p: number) {
     return (p * 100).toFixed(2);

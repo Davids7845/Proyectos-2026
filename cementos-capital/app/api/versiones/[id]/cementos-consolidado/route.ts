@@ -16,8 +16,7 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** ORDs cuyo costo y producción se promedian para el consolidado. */
-export const ORDS_CONSOLIDADOS = [8, 9, 10, 11, 14, 16, 17, 18, 22] as const;
+const ORDS_CONSOLIDADOS = [8, 9, 10, 11, 14, 16, 17, 18, 22] as const;
 
 interface DesgloseRow {
   ord: number;
