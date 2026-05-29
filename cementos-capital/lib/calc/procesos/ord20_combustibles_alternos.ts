@@ -27,6 +27,8 @@ export class Ord20CombustiblesAlternos implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "combustibles alternos",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
     });
   }
 }

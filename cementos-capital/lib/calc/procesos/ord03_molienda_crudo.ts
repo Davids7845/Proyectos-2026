@@ -33,6 +33,8 @@ export class Ord03MoliendaCrudo implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "molienda de crudo",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
     });
   }
 }

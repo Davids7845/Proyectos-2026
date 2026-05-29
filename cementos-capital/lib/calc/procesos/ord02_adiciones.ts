@@ -98,18 +98,22 @@ export class Ord02Adiciones implements ProcesoCalculator {
     });
 
     // ─── Energía eléctrica + Costos fijos ───────────────────────────────
+    // Fase 3: clasificar (repuestos vs servicios/regalías) + placeholders.
     const aux = await logComponentesAuxiliares(
       { ctx, proceso, periodo, writer },
-      { conEnergia: true, energiaKey: "adiciones", conCostosFijos: true },
+      { conEnergia: true, energiaKey: "adiciones", conCostosFijos: true, clasificar: true, registrarPlaceholders: true },
     );
     const costo_energia   = aux.costo_energia;
     const energiaCalcId   = aux.energiaCalcId;
-    const costo_servicios = aux.costo_servicios;
+    const fijosTotal      = aux.costo_servicios;          // suma de todos los fijos
+    const costo_repuestos = aux.costo_repuestos;
+    const restoServicios  = (fijosTotal ?? 0) - (costo_repuestos ?? 0);
+    const costo_servicios = restoServicios > 0 ? restoServicios : null;
     const fijosCalcIds    = aux.fijosCalcIds;
     const fijosRolDeps    = aux.fijosRolDeps;
 
     // ─── Total ────────────────────────────────────────────────────────
-    const costo_total = f.valor + (costo_energia ?? 0) + (costo_servicios ?? 0);
+    const costo_total = f.valor + (costo_energia ?? 0) + (fijosTotal ?? 0);
     const dependeDe: UUID[] = [mpId];
     const rolDepsTotal: Record<string, string> = { [mpId]: "costo_mp" };
     if (energiaCalcId) { dependeDe.push(energiaCalcId); rolDepsTotal[energiaCalcId] = "costo_energia"; }
@@ -125,10 +129,10 @@ export class Ord02Adiciones implements ProcesoCalculator {
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
       formula_expresion:
         `costo_mp=${f.valor}` +
-        (costo_energia   != null ? ` + energia=${costo_energia}`   : "") +
-        (costo_servicios != null ? ` + servicios=${costo_servicios}` : "") +
+        (costo_energia != null ? ` + energia=${costo_energia}` : "") +
+        (fijosTotal    != null ? ` + fijos=${fijosTotal}`      : "") +
         ` → total=${costo_total}`,
-      parametros_entrada: { costo_mp: f.valor, costo_energia, costo_servicios },
+      parametros_entrada: { costo_mp: f.valor, costo_energia, costo_fijos: fijosTotal, costo_repuestos, costo_servicios },
       nivel_jerarquia: 0,
       depende_de: dependeDe,
       rol_dependencias: rolDepsTotal,
@@ -140,7 +144,7 @@ export class Ord02Adiciones implements ProcesoCalculator {
       costo_materia_prima: f.valor,
       costo_combustible:   null,
       costo_energia,
-      costo_repuestos:     null,
+      costo_repuestos,
       costo_servicios,
       costo_total,
       costo_por_ton: costo_total,

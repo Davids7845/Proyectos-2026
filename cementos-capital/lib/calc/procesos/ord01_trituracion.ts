@@ -174,16 +174,21 @@ export class Ord01Trituracion implements ProcesoCalculator {
 
     // ─── 4) Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
     // Nota: la energía ya está embebida en calcPrehomo; NO se agrega bloque energía.
+    // Fase 3: clasificamos (repuestos vs servicios/regalías) y registramos
+    // placeholders (componentes en 0) para que la vista muestre todos.
     const aux = await logComponentesAuxiliares(
       { ctx, proceso, periodo, writer },
-      { conEnergia: false, conCostosFijos: true },
+      { conEnergia: false, conCostosFijos: true, clasificar: true, registrarPlaceholders: true },
     );
-    const costo_servicios = aux.costo_servicios;
+    const fijosTotal      = aux.costo_servicios;             // suma de todos los fijos (total sin cambio)
+    const costo_repuestos = aux.costo_repuestos;
+    const restoServicios  = (fijosTotal ?? 0) - (costo_repuestos ?? 0);
+    const costo_servicios = restoServicios > 0 ? restoServicios : null;
     const fijosCalcIds    = aux.fijosCalcIds;
     const fijosRolDeps    = aux.fijosRolDeps;
 
     // ─── 5) Costo total proceso ────────────────────────────────────────
-    const costo_total = f2.valor + (costo_servicios ?? 0);
+    const costo_total = f2.valor + (fijosTotal ?? 0);
     const costo_por_ton = costo_total;
 
     const dependeDeTotal: UUID[] = [f2Id];
@@ -200,9 +205,9 @@ export class Ord01Trituracion implements ProcesoCalculator {
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
       formula_expresion:
         `costo_mp=${f2.valor}` +
-        (costo_servicios != null ? ` + servicios=${costo_servicios}` : "") +
+        (fijosTotal != null ? ` + fijos=${fijosTotal}` : "") +
         ` → total=${costo_total}`,
-      parametros_entrada: { costo_mp: f2.valor, costo_servicios },
+      parametros_entrada: { costo_mp: f2.valor, costo_fijos: fijosTotal, costo_repuestos, costo_servicios },
       nivel_jerarquia: 0,
       depende_de: dependeDeTotal,
       rol_dependencias: rolDepsTotal,
@@ -214,7 +219,7 @@ export class Ord01Trituracion implements ProcesoCalculator {
       costo_materia_prima: f2.valor,
       costo_combustible:   null,
       costo_energia:       null,
-      costo_repuestos:     null,
+      costo_repuestos,
       costo_servicios,
       costo_total,
       costo_por_ton,

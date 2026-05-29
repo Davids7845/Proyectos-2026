@@ -57,6 +57,17 @@ export interface RunRecetaOpts {
    * individualmente y la suma se acumula en `costo_servicios`.
    */
   conCostosFijos?: boolean;
+  /**
+   * Fase 3: registra componentes en 0 como placeholders (decisión #8) para
+   * que la vista muestre todos los componentes esperados del Excel.
+   */
+  registrarPlaceholders?: boolean;
+  /**
+   * Fase 3: clasifica los costos fijos en repuestos vs servicios para poblar
+   * `costo_repuestos` y `costo_servicios` por separado en el resultado.
+   * El total no cambia. ORD 5/6/7/16 no lo pasan → comportamiento original.
+   */
+  clasificar?: boolean;
   extraDerivedComponents?: Array<{
     /** Código del material producto del proceso productor (p.ej. "CARBONMOL"). */
     material_codigo: string;
@@ -298,12 +309,24 @@ export async function runRecetaProcess(
   const auxFijos = opts.conCostosFijos
     ? await logComponentesAuxiliares(
         { ctx, proceso, periodo, writer },
-        { conEnergia: false, conCostosFijos: true },
+        {
+          conEnergia: false, conCostosFijos: true,
+          clasificar: opts.clasificar, registrarPlaceholders: opts.registrarPlaceholders,
+        },
       )
     : null;
-  const costo_servicios = auxFijos?.costo_servicios ?? null;
+  const fijosTotal      = auxFijos?.costo_servicios ?? null;   // suma de todos los fijos
   const fijosCalcIds    = auxFijos?.fijosCalcIds    ?? [];
   const fijosRolDeps    = auxFijos?.fijosRolDeps    ?? {};
+  // Desglose granular para el resultado (sólo si clasificar). El total usa
+  // `fijosTotal` (suma completa), por lo que el costo_total no cambia.
+  const res_costo_repuestos = opts.clasificar ? (auxFijos?.costo_repuestos ?? null) : null;
+  const res_costo_servicios = opts.clasificar
+    ? (((fijosTotal ?? 0) - (auxFijos?.costo_repuestos ?? 0)) > 0
+        ? (fijosTotal ?? 0) - (auxFijos?.costo_repuestos ?? 0)
+        : null)
+    : fijosTotal;
+  const costo_servicios = fijosTotal;
 
   const sumaExtras = (costo_energia ?? 0) + (costo_combustible ?? 0) + (costo_servicios ?? 0);
   const costo_total = mpResult.valor + sumaExtras;
@@ -351,8 +374,8 @@ export async function runRecetaProcess(
     costo_materia_prima: mpResult.valor,
     costo_combustible,
     costo_energia,
-    costo_repuestos:     null,
-    costo_servicios,
+    costo_repuestos:     res_costo_repuestos,
+    costo_servicios:     res_costo_servicios,
     costo_total,
     costo_por_ton: costo_total,
     costo_recibido_arrastre:  0,

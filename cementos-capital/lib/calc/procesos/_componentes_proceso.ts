@@ -21,14 +21,54 @@ export interface AuxComponentesOpts {
   conEnergia?: boolean;
   energiaKey?: string;
   conCostosFijos?: boolean;
+  /**
+   * Fase 3: si true, los costos fijos con valor 0 se registran igual en el log
+   * (como `costo_fijo_proceso` con valor_resultado=0) en lugar de omitirse.
+   * Permite que la vista muestre TODOS los componentes esperados del Excel,
+   * incluyendo los que no aplican este período (decisión #8: placeholders).
+   */
+  registrarPlaceholders?: boolean;
+  /**
+   * Fase 3: si true, clasifica cada costo fijo en su categoría (repuesto,
+   * servicio, regalía, combustible_aux, flete) y devuelve totales granulares.
+   * El total agregado (`costo_servicios`) no cambia — es la suma de todos.
+   */
+  clasificar?: boolean;
 }
+
+export type CategoriaComponente =
+  | "repuesto" | "servicio" | "regalia" | "combustible_aux" | "flete" | "fijo";
 
 export interface AuxComponentesResult {
   costo_energia:   number | null;
   energiaCalcId:   UUID | null;
-  costo_servicios: number | null;
+  costo_servicios: number | null;  // suma de TODOS los fijos no-cero (backward compat)
   fijosCalcIds:    UUID[];
   fijosRolDeps:    Record<string, string>;
+  // ── Fase 3: desglose granular (sólo poblado si opts.clasificar) ──────────
+  costo_repuestos:        number | null;
+  costo_regalias:         number | null;
+  costo_combustible_aux:  number | null;
+  costo_flete:            number | null;
+  /** Nombres (lowercase) de los componentes registrados, para warnings. */
+  componentesRegistrados: Set<string>;
+  /** IDs de logs de placeholders (valor 0) registrados. */
+  placeholderCalcIds:     UUID[];
+}
+
+/**
+ * Clasifica un componente de costo fijo según su nombre/código en una de las
+ * categorías canónicas. Heurística basada en palabras clave del Excel.
+ */
+export function clasificarComponente(nombre: string, codigo?: string): CategoriaComponente {
+  const n = (nombre ?? "").toLowerCase();
+  const c = (codigo ?? "").toLowerCase();
+  if (/regal/i.test(n) || /regal/i.test(c)) return "regalia";
+  if (/flete/i.test(n) || /flete|^fle_/i.test(c)) return "flete";
+  if (/gasoil|diesel/i.test(n) || /gasoil|diesel/i.test(c)) return "combustible_aux";
+  if (/cargue|descargue|cargador|transporte|sellado|dosific|desatasque|empaque|unitario|fijo \+ horas|servicio/i.test(n)) return "servicio";
+  if (/barras|placas|material dique|l[áa]minas|anillos|tapas|separadores|cuerpos|moledores|refractari|enfriador|ductos|masas|segmentos|variables|elementos sellad|desmantel/i.test(n)) return "repuesto";
+  return "fijo";
 }
 
 export async function logComponentesAuxiliares(
@@ -109,12 +149,35 @@ export async function logComponentesAuxiliares(
   let costo_servicios: number | null = null;
   const fijosCalcIds: UUID[] = [];
   const fijosRolDeps: Record<string, string> = {};
+  const placeholderCalcIds: UUID[] = [];
+  const componentesRegistrados = new Set<string>();
+  const catTotals: Record<CategoriaComponente, number> = {
+    repuesto: 0, servicio: 0, regalia: 0, combustible_aux: 0, flete: 0, fijo: 0,
+  };
 
   if (opts.conCostosFijos) {
     const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
     let suma = 0;
     for (const it of items) {
-      if (it.costo_por_ton === 0) continue;
+      // Placeholder (valor 0): registrar sólo si opts.registrarPlaceholders.
+      if (it.costo_por_ton === 0) {
+        if (!opts.registrarPlaceholders) continue;
+        const phId = await writer.log({
+          calculo_tipo: "costo_fijo_proceso",
+          proceso_id: proceso.id,
+          periodo,
+          concepto: it.nombre,
+          valor_resultado: 0,
+          unidad: "COP/Ton",
+          formula_codigo: "COSTO_PROCESO_SUMA_v1",
+          formula_expresion: `${it.codigo}: 0 COP/Ton (placeholder — no aplica este período)`,
+          parametros_entrada: { codigo: it.codigo, nombre: it.nombre, costo_por_ton: 0, placeholder: true },
+          nivel_jerarquia: 1,
+        });
+        placeholderCalcIds.push(phId);
+        componentesRegistrados.add(it.nombre.toLowerCase());
+        continue;
+      }
       suma += it.costo_por_ton;
       const id = await writer.log({
         calculo_tipo: "costo_fijo_proceso",
@@ -130,9 +193,22 @@ export async function logComponentesAuxiliares(
       });
       fijosCalcIds.push(id);
       fijosRolDeps[id] = `fijo_${it.codigo.toLowerCase()}`;
+      componentesRegistrados.add(it.nombre.toLowerCase());
+      if (opts.clasificar) {
+        const cat = clasificarComponente(it.nombre, it.codigo);
+        catTotals[cat] += it.costo_por_ton;
+      }
     }
     if (suma > 0) costo_servicios = suma;
   }
 
-  return { costo_energia, energiaCalcId, costo_servicios, fijosCalcIds, fijosRolDeps };
+  return {
+    costo_energia, energiaCalcId, costo_servicios, fijosCalcIds, fijosRolDeps,
+    costo_repuestos:       opts.clasificar && catTotals.repuesto > 0 ? catTotals.repuesto : null,
+    costo_regalias:        opts.clasificar && catTotals.regalia > 0 ? catTotals.regalia : null,
+    costo_combustible_aux: opts.clasificar && catTotals.combustible_aux > 0 ? catTotals.combustible_aux : null,
+    costo_flete:           opts.clasificar && catTotals.flete > 0 ? catTotals.flete : null,
+    componentesRegistrados,
+    placeholderCalcIds,
+  };
 }
