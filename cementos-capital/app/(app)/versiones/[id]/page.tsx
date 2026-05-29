@@ -106,6 +106,7 @@ export default async function VersionOverviewPage({
           <Link href={`/versiones/${id}/costo`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo</Link>
           <Link href={`/versiones/${id}/graficas`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Gráficas</Link>
           <Link href={`/versiones/${id}/arrastrado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo arrastrado</Link>
+          <Link href={`/versiones/${id}/costo-arrastrado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">CA Detalle</Link>
           <Link href={`/versiones/${id}/sin-consolidar`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Sin consolidar</Link>
           <Link href={`/versiones/${id}/sensibilidad`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Sensibilidad</Link>
           <Link href={`/versiones/${id}/desviaciones`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Desviaciones</Link>

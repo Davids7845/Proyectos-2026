@@ -2,9 +2,10 @@ import AdminTab from "./AdminTab";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const tabs = [
-    { href: "/admin/maestros/procesos",   label: "Procesos" },
-    { href: "/admin/maestros/materiales", label: "Materiales" },
-    { href: "/admin/formulas",            label: "Fórmulas" },
+    { href: "/admin/maestros/procesos",       label: "Procesos" },
+    { href: "/admin/maestros/materiales",     label: "Materiales" },
+    { href: "/admin/formulas",                label: "Fórmulas" },
+    { href: "/admin/materiales-agregados",    label: "Materiales Agregados" },
   ];
   return (
     <div>

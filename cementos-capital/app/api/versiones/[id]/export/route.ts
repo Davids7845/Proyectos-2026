@@ -494,7 +494,187 @@ export async function POST(
   shArrastrado.getColumn(1).width = 34;
   periodos.forEach((_, i) => { shArrastrado.getColumn(i + 2).width = 12; });
 
-  // ─── Hoja 11: Energía ───────────────────────────────────────────────────────
+  // ─── Hoja 11: CA Detalle — Costo Arrastrado desglosado por componente ────────
+  // Muestra los 4 bloques (Clinker explotado, UG, ART, Fibro) para el último período.
+  // Columna Real: pendiente integración costos_reales.
+  {
+    const periodoCA = periodos[periodos.length - 1]; // último período disponible
+    const shCA = wb.addWorksheet("CA Detalle");
+
+    const ORDS_CA = [3, 5, 6, 7, 16] as const;
+    const { data: procesosCA } = await supabase
+      .from("procesos")
+      .select("id, ord, nombre")
+      .in("ord", [...ORDS_CA])
+      .eq("activo", true);
+
+    const byOrdCA = new Map((procesosCA ?? []).map((p: { ord: number; id: string; nombre: string }) => [p.ord, p]));
+    const procesoIdsCA = (procesosCA ?? []).map((p: { id: string }) => p.id);
+
+    const LOG_TIPOS_CA = [
+      "precio_componente_directo", "precio_componente_derivado",
+      "costo_componente_derivado_termico", "costo_energia_proceso", "costo_fijo_proceso",
+    ];
+
+    const [{ data: logsCA }, { data: recetasCA }] = await Promise.all([
+      supabase
+        .from("calculation_log")
+        .select("id, calculo_tipo, proceso_id, material_id, concepto, valor_resultado, parametros_entrada")
+        .eq("run_id", lastRun.id)
+        .eq("periodo", periodoCA)
+        .in("proceso_id", procesoIdsCA)
+        .in("calculo_tipo", LOG_TIPOS_CA),
+      supabase
+        .from("recetas")
+        .select("proceso_id, periodo, receta_lineas(material_id, porcentaje)")
+        .eq("version_id", versionId)
+        .in("proceso_id", procesoIdsCA),
+    ]);
+
+    const pctCA = new Map<string, number>();
+    for (const r of (recetasCA ?? []) as Array<{ proceso_id: string; periodo: string; receta_lineas: Array<{ material_id: string; porcentaje: number }> }>) {
+      const isPeriodo = r.periodo === periodoCA;
+      for (const ln of r.receta_lineas ?? []) {
+        const key = `${r.proceso_id}|${ln.material_id}`;
+        if (isPeriodo || !pctCA.has(key)) pctCA.set(key, Number(ln.porcentaje));
+      }
+    }
+
+    const matIdsCA = Array.from(new Set((logsCA ?? []).map((l: { material_id: string | null }) => l.material_id).filter(Boolean))) as string[];
+    const { data: matsCA } = matIdsCA.length > 0
+      ? await supabase.from("materiales").select("id, nombre").in("id", matIdsCA)
+      : { data: [] };
+    const matNombreCA = new Map<string, string>();
+    for (const m of matsCA ?? []) matNombreCA.set(m.id, m.nombre);
+
+    type LogCA = { calculo_tipo: string; proceso_id: string; material_id: string | null; concepto: string | null; valor_resultado: number; parametros_entrada: Record<string, unknown> | null };
+    const logsByProcCA = new Map<string, LogCA[]>();
+    for (const log of (logsCA ?? []) as LogCA[]) {
+      if (!logsByProcCA.has(log.proceso_id)) logsByProcCA.set(log.proceso_id, []);
+      logsByProcCA.get(log.proceso_id)!.push(log);
+    }
+
+    const resolveComp = (log: LogCA, consumoOverride?: number): { nombre: string; tipo: string; consumo: number; costoUnit: number; total: number } | null => {
+      const p = (log.parametros_entrada ?? {}) as Record<string, unknown>;
+      if (log.calculo_tipo === "precio_componente_directo" || log.calculo_tipo === "precio_componente_derivado") {
+        const consumo = consumoOverride ?? (log.material_id ? (pctCA.get(`${log.proceso_id}|${log.material_id}`) ?? 0) : 0);
+        const costoUnit = Number(log.valor_resultado);
+        return { nombre: log.material_id ? (matNombreCA.get(log.material_id) ?? log.concepto ?? "") : (log.concepto ?? ""), tipo: "MP", consumo, costoUnit, total: consumo * costoUnit };
+      }
+      if (log.calculo_tipo === "costo_componente_derivado_termico") {
+        const consumo = consumoOverride ?? Number(p.consumo ?? 0);
+        return { nombre: log.material_id ? (matNombreCA.get(log.material_id) ?? log.concepto ?? "") : (log.concepto ?? ""), tipo: "Combust.", consumo, costoUnit: Number(p.precio_arrastrado ?? 0), total: Number(log.valor_resultado) };
+      }
+      if (log.calculo_tipo === "costo_energia_proceso") {
+        const consumo = Number(p.kwh_ton ?? 0);
+        const total = Number(log.valor_resultado);
+        return { nombre: "Energía Eléctrica", tipo: "Energía", consumo, costoUnit: consumo > 0 ? total / consumo : 0, total };
+      }
+      if (log.calculo_tipo === "costo_fijo_proceso") {
+        const val = Number(log.valor_resultado);
+        if (val === 0) return null;
+        return { nombre: String(p.codigo ?? log.concepto ?? "Costo fijo"), tipo: "Fijo", consumo: 1, costoUnit: val, total: val };
+      }
+      return null;
+    };
+
+    // Header
+    shCA.getRow(1).getCell(1).value = `Versión: ${version.nombre} — Período: ${fmtPeriodo(periodoCA)}`;
+    shCA.getRow(1).getCell(1).font = { bold: true, size: 12 };
+    const hdrCA = shCA.getRow(2);
+    ["Componente", "Tipo", "Consumo Ppto", "Costo Unit Ppto", "Aporte Ppto", "Consumo Real", "Costo Unit Real", "Aporte Real"].forEach((h, i) => {
+      const cell = hdrCA.getCell(i + 1);
+      cell.value = h; cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+      cell.alignment = { horizontal: i > 1 ? "right" : "left" };
+    });
+    [42, 10, 14, 16, 16, 14, 16, 16].forEach((w, i) => { shCA.getColumn(i + 1).width = w; });
+
+    let caRow = 3;
+
+    const BLOQUES_CA = [
+      { label: "CLINKER (Crudo explotado + componentes propios)", ord: 5, explodeCrudo: true },
+      { label: "CEMENTO UG", ord: 6, explodeCrudo: false },
+      { label: "CEMENTO ART", ord: 7, explodeCrudo: false },
+      { label: "FIBROCEMENTO", ord: 16, explodeCrudo: false },
+    ];
+
+    // Crudo consumption in Clinker
+    const proc5CA = byOrdCA.get(5) as { id: string } | undefined;
+    const proc3CA = byOrdCA.get(3) as { id: string } | undefined;
+    const logs5CA = logsByProcCA.get(proc5CA?.id ?? "") ?? [];
+    const crudoDerCA = logs5CA.find((l: LogCA) => l.calculo_tipo === "precio_componente_derivado");
+    const consumoCrudo = crudoDerCA?.material_id ? (pctCA.get(`${proc5CA!.id}|${crudoDerCA.material_id}`) ?? 0) : 0;
+
+    for (const bloque of BLOQUES_CA) {
+      // Section header
+      const hRow = shCA.getRow(caRow++);
+      hRow.getCell(1).value = bloque.label;
+      hRow.getCell(1).font = { bold: true, size: 11 };
+      hRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD6EEF5" } };
+      for (let c = 2; c <= 8; c++) {
+        hRow.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD6EEF5" } };
+      }
+
+      const proc = byOrdCA.get(bloque.ord) as { id: string; nombre: string } | undefined;
+      const components: Array<{ nombre: string; tipo: string; consumo: number; costoUnit: number; total: number; isSubrow: boolean }> = [];
+
+      if (bloque.explodeCrudo && proc3CA && consumoCrudo > 0) {
+        for (const log of logsByProcCA.get(proc3CA.id) ?? []) {
+          const comp = resolveComp(log);
+          if (!comp) continue;
+          const cs = comp.consumo * consumoCrudo;
+          components.push({ ...comp, nombre: `  ↳ ${comp.nombre}`, consumo: cs, total: cs * comp.costoUnit, isSubrow: true });
+        }
+      }
+
+      if (proc) {
+        for (const log of logsByProcCA.get(proc.id) ?? []) {
+          if (bloque.explodeCrudo && log.calculo_tipo === "precio_componente_derivado") continue;
+          const comp = resolveComp(log);
+          if (comp) components.push({ ...comp, isSubrow: false });
+        }
+      }
+
+      let totalBloque = 0;
+      for (const comp of components) {
+        const r = shCA.getRow(caRow++);
+        r.getCell(1).value = comp.nombre;
+        r.getCell(2).value = comp.tipo;
+        r.getCell(3).value = comp.consumo || null;
+        r.getCell(3).numFmt = "#,##0.0000"; r.getCell(3).alignment = { horizontal: "right" };
+        r.getCell(4).value = comp.costoUnit || null;
+        r.getCell(4).numFmt = "#,##0"; r.getCell(4).alignment = { horizontal: "right" };
+        r.getCell(5).value = comp.total || null;
+        r.getCell(5).numFmt = "#,##0"; r.getCell(5).alignment = { horizontal: "right" };
+        r.getCell(6).value = null; // Real: TODO
+        r.getCell(7).value = null;
+        r.getCell(8).value = null;
+        if (comp.isSubrow) {
+          r.getCell(1).font = { italic: true, color: { argb: "FF486C81" } };
+        }
+        totalBloque += comp.total;
+      }
+
+      // Total row
+      const tRow = shCA.getRow(caRow++);
+      tRow.getCell(1).value = `TOTAL ${bloque.label}`;
+      tRow.getCell(1).font = { bold: true };
+      tRow.getCell(5).value = totalBloque || null;
+      tRow.getCell(5).numFmt = "#,##0"; tRow.getCell(5).alignment = { horizontal: "right" };
+      tRow.getCell(5).font = { bold: true };
+      for (let c = 1; c <= 8; c++) {
+        tRow.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F9FB" } };
+      }
+      caRow++; // blank spacer
+    }
+
+    const noteRow = shCA.getRow(caRow);
+    noteRow.getCell(1).value = `Nota: Columna Real pendiente integración costos_reales. Factor Crudo en Clinker: ${consumoCrudo.toFixed(4)}`;
+    noteRow.getCell(1).font = { italic: true, color: { argb: "FF9CA3AF" } };
+  }
+
+  // ─── Hoja 12: Energía ────────────────────────────────────────────────────────
   const shEnergia = wb.addWorksheet("Energía");
   shEnergia.getRow(1).values = [
     "Período", "ORD", "Proceso", "Producción (Ton)", "kWh/Ton", "kWh Total", "COP/kWh", "Costo Total COP",
@@ -546,7 +726,7 @@ export async function POST(
     }
   }
 
-  // ─── Hoja 12: Costo sin Consolidar ──────────────────────────────────────────
+  // ─── Hoja 13: Costo sin Consolidar ──────────────────────────────────────────
   // Matriz costo/Ton igual a "Costo por Ton" pero anotando con 🔒 los procesos
   // forzados por precios_fijos_overrides cuando version.precios_fijos = true.
   const { data: pfOverrides } = await (supabase as any)
@@ -597,7 +777,7 @@ export async function POST(
   shSinCons.getColumn(1).width = 34;
   periodos.forEach((_, i) => { shSinCons.getColumn(i + 2).width = 14; });
 
-  // ─── Hoja 13: Comparativo (Gráficas) ────────────────────────────────────────
+  // ─── Hoja 14: Comparativo (Gráficas) ────────────────────────────────────────
   // Bridge proceso×concepto entre la versión actual y otra versión (compare).
   // Por defecto, usa la versión más reciente con run exitoso distinta a la actual.
   let compareId: string | null = compareIdParam;
