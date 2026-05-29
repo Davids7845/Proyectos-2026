@@ -21,6 +21,21 @@ interface ComponenteRow {
   costo_por_ton: number;
   calc_id: string | null;
   tipo: string;
+  esPlaceholder?: boolean;
+}
+
+function periodosEntreFechas(inicio: string, fin: string): string[] {
+  const out: string[] = [];
+  const s = new Date(`${inicio.slice(0, 10)}T00:00:00Z`);
+  const e = new Date(`${fin.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return out;
+  const cursor = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), 1));
+  const last   = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 1));
+  while (cursor <= last) {
+    out.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}-01`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return out;
 }
 
 export default async function ProcesoDetallePage({ params, searchParams }: PageProps) {
@@ -35,7 +50,7 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
     { data: version },
     { data: proceso },
   ] = await Promise.all([
-    supabase.from("budget_versions").select("id, nombre").eq("id", id).single(),
+    supabase.from("budget_versions").select("id, nombre, fecha_inicio, fecha_fin").eq("id", id).single(),
     supabase.from("procesos").select("id, ord, nombre").eq("ord", ordNum).maybeSingle(),
   ]);
   if (!version || !proceso) notFound();
@@ -57,6 +72,12 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
     .order("periodo");
 
   const periodos = (costoProcPeriodos ?? []).map(r => r.periodo as string);
+  const periodosConDatos = new Set(periodos);
+  // Show every month in the version's date range; grey out those without calculation data.
+  const versionRange = version as { fecha_inicio?: string | null; fecha_fin?: string | null };
+  const todosLosPeriodos = versionRange.fecha_inicio && versionRange.fecha_fin
+    ? periodosEntreFechas(versionRange.fecha_inicio, versionRange.fecha_fin)
+    : periodos;
   const selectedPeriodo = sp.periodo ?? periodos[periodos.length - 1] ?? null;
 
   const { data: rendimiento } = await supabase
@@ -173,15 +194,16 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
       });
       total_costo_ton += row.valor_resultado;
     } else if (tipo === "costo_fijo_proceso") {
-      if (row.valor_resultado === 0) continue;
+      const esPlaceholder = row.valor_resultado === 0;
       componentes.push({
         concepto: String(params.nombre ?? params.codigo ?? row.concepto ?? "Costo fijo"),
-        consumo: 1,
+        consumo: esPlaceholder ? null : 1,
         consumo_unidad: "Ton/Ton",
-        precio_unit: row.valor_resultado,
+        precio_unit: esPlaceholder ? null : row.valor_resultado,
         costo_por_ton: row.valor_resultado,
         calc_id: row.id,
         tipo: "fijo",
+        esPlaceholder,
       });
       total_costo_ton += row.valor_resultado;
     } else if (tipo === "costo_mp_prehomo") {
@@ -298,22 +320,37 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
             </p>
             <h1 className="text-2xl font-bold mt-1" style={{ color: BRAND.ink }}>{proceso.nombre}</h1>
           </div>
-          {periodos.length > 1 && (
+          {todosLosPeriodos.length > 1 && (
             <div className="flex flex-wrap items-center gap-1 max-w-md justify-end">
-              {periodos.map(p => (
-                <Link
-                  key={p}
-                  href={`/versiones/${id}/costo/proceso/${ordNum}?periodo=${p}`}
-                  className="px-2.5 py-1 rounded text-xs font-medium border transition-colors"
-                  style={
-                    p === selectedPeriodo
-                      ? { backgroundColor: BRAND.primary, color: "white", borderColor: BRAND.primary }
-                      : { borderColor: BRAND.border, color: BRAND.inkSecondary }
-                  }
-                >
-                  {formatMes(p)}
-                </Link>
-              ))}
+              {todosLosPeriodos.map(p => {
+                const tieneDatos = periodosConDatos.has(p);
+                if (!tieneDatos) {
+                  return (
+                    <span
+                      key={p}
+                      title="Sin cálculo para este período"
+                      className="px-2.5 py-1 rounded text-xs font-medium border cursor-default select-none"
+                      style={{ borderColor: BRAND.border, color: BRAND.inkMuted, opacity: 0.45 }}
+                    >
+                      {formatMes(p)}
+                    </span>
+                  );
+                }
+                return (
+                  <Link
+                    key={p}
+                    href={`/versiones/${id}/costo/proceso/${ordNum}?periodo=${p}`}
+                    className="px-2.5 py-1 rounded text-xs font-medium border transition-colors"
+                    style={
+                      p === selectedPeriodo
+                        ? { backgroundColor: BRAND.primary, color: "white", borderColor: BRAND.primary }
+                        : { borderColor: BRAND.border, color: BRAND.inkSecondary }
+                    }
+                  >
+                    {formatMes(p)}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
@@ -374,9 +411,11 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
               <tbody>
                 {componentes.map((c, i) => {
                   const pct = total_costo_ton > 0 ? (c.costo_por_ton / total_costo_ton) * 100 : 0;
-                  const color = BRAND.chart[i % BRAND.chart.length];
+                  const color = c.esPlaceholder ? BRAND.border : BRAND.chart[i % BRAND.chart.length];
+                  const textColor = c.esPlaceholder ? BRAND.inkMuted : BRAND.ink;
+                  const numColor  = c.esPlaceholder ? BRAND.inkMuted : BRAND.inkSecondary;
                   return (
-                    <tr key={i} className="border-b" style={{ borderColor: BRAND.border }}>
+                    <tr key={i} className="border-b" style={{ borderColor: BRAND.border, opacity: c.esPlaceholder ? 0.6 : 1 }}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span
@@ -388,35 +427,39 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
                             <Link
                               href={`/versiones/${id}/calculos/${c.calc_id}`}
                               className="hover:underline"
-                              style={{ color: BRAND.ink }}
+                              style={{ color: textColor }}
                             >
                               {c.concepto}
                             </Link>
                           ) : (
-                            <span style={{ color: BRAND.ink }}>{c.concepto}</span>
+                            <span style={{ color: textColor }}>{c.concepto}</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" style={{ color: BRAND.inkSecondary }}>
+                      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" style={{ color: numColor }}>
                         {c.consumo != null ? c.consumo.toLocaleString("es-CO", { maximumFractionDigits: 4 }) : "—"}
                         <span className="text-xs ml-1" style={{ color: BRAND.inkMuted }}>{c.consumo_unidad === "Ton/Ton" ? "" : c.consumo_unidad}</span>
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums" style={{ color: BRAND.inkSecondary }}>
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ color: numColor }}>
                         {c.precio_unit != null ? formatCOP(c.precio_unit) : "—"}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <div className="font-semibold tabular-nums" style={{ color: BRAND.ink }}>
-                          {formatCOP(c.costo_por_ton)}
+                        <div className="font-semibold tabular-nums" style={{ color: textColor }}>
+                          {c.esPlaceholder ? "—" : formatCOP(c.costo_por_ton)}
                         </div>
-                        <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: BRAND.bgBand }}>
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }}
-                          />
-                        </div>
-                        <div className="text-xs mt-0.5 tabular-nums" style={{ color: BRAND.inkMuted }}>
-                          {pct.toFixed(1)} %
-                        </div>
+                        {!c.esPlaceholder && (
+                          <>
+                            <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: BRAND.bgBand }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }}
+                              />
+                            </div>
+                            <div className="text-xs mt-0.5 tabular-nums" style={{ color: BRAND.inkMuted }}>
+                              {pct.toFixed(1)} %
+                            </div>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
