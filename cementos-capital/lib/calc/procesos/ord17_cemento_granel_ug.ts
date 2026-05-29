@@ -18,6 +18,7 @@ export class Ord17CementoGranelUg implements ProcesoCalculator {
       granelOrd: 6,
       granelCodigo: "CEM_UG",
       serviceCodigo: "CARGUE_CEM",
+      conEnergia: true,
     });
   }
 }

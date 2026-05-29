@@ -30,6 +30,7 @@ export class Ord10CementoUg25 implements ProcesoCalculator {
       sacoCodigo: "SACO_25KG",
       sacosPorTon: 40,
       serviceCodigo: "CARGUE_CEM",
+      conEnergia: true,
     });
   }
 }

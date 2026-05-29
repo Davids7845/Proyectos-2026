@@ -89,8 +89,9 @@ describe("Runner ORD 8 — Cemento UG 50 kg empacado", () => {
       ctx, proceso: ctx.procesos[1], periodo: PERIODO, writer,
     });
 
-    // 1 × 250000 (granel) + 20 × 800 (sacos) + 1 × 8500 (cargue) = 250000 + 16000 + 8500 = 274500
-    const expected = 1 * FAKE_COSTO_GRANEL + 20 * 800 + 1 * 8500;
+    // 1 × 250000 (granel) + 20 × 1.02 (rotura) × 800 (sacos) + 1 × 8500 (cargue)
+    // = 250000 + 16320 + 8500 = 274820
+    const expected = 1 * FAKE_COSTO_GRANEL + 20 * 1.02 * 800 + 1 * 8500;
     expect(r8.costo_total).toBeCloseTo(expected, 2);
     expect(r8.costo_materia_prima).toBeCloseTo(expected, 2);
   });

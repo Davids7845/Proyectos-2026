@@ -17,6 +17,8 @@ export class Ord22FibrocementoGranel implements ProcesoCalculator {
       conceptoMp: "Costo Granel — Fibrocemento Granel",
       granelOrd: 16,
       granelCodigo: "FIBROCEMENTO",
+      serviceCodigo: "CARGUE_CEM",
+      conEnergia: true,
     });
   }
 }

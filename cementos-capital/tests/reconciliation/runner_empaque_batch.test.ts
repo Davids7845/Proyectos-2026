@@ -1,19 +1,21 @@
-// Pruebas de empaque batch — ORD 9/10/11/14/15/16/19.
+// Pruebas de empaque batch — ORD 9/10/11/14/16.
 // El helper _receta_base ya está extensamente probado; aquí validamos que:
 //   1) El DERIVED_BY_CODIGO correcto se aplica (ORD 6 vs ORD 7 según producto).
-//   2) La aritmética básica funciona (granel + empaque = total esperado).
+//   2) La aritmética básica funciona (granel + empaque con rotura = total esperado).
 //   3) Se lanza error si el proceso fuente no fue calculado.
+// Fase 3: los sacos llevan rotura (1 + 0.02) y Topex cascadea de ORD 6 (UG).
 
 import { describe, it, expect } from "vitest";
 import { Ord09CementoUg42 }     from "@/lib/calc/procesos/ord09_cemento_ug_42";
 import { Ord10CementoUg25 }     from "@/lib/calc/procesos/ord10_cemento_ug_25";
 import { Ord11CementoArt42 }    from "@/lib/calc/procesos/ord11_cemento_art_42";
 import { Ord14CementoTopex50 }  from "@/lib/calc/procesos/ord14_cemento_topex_50";
-import { Ord15CementoUgTp }     from "@/lib/calc/procesos/ord15_cemento_ug_tp";
 import { Ord16Fibrocemento }    from "@/lib/calc/procesos/ord16_fibrocemento";
-import { Ord19CementoBigBag }   from "@/lib/calc/procesos/ord19_cemento_bigbag";
 import { InMemoryWriter } from "@/lib/calc/engine/writer";
 import type { CalcContext, ProcesoMeta } from "@/lib/calc/engine/context";
+
+// Factor de rotura por defecto (sin roturaSacos en ctx → helper usa 0.02).
+const ROTURA = 1.02;
 
 const PERIODO = "2026-01-01";
 
@@ -122,7 +124,7 @@ describe("Runner ORD 9 — Cemento UG 42,5 kg", () => {
   it("Calcula granel UG + sacos 42 + cargue", async () => {
     const ctx = buildCtxUg(PROC9, RECETA);
     const r9 = await new Ord09CementoUg42().run({ ctx, proceso: PROC9, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 1 * COSTO_GRANEL_UG + (1000 / 42.5) * 720 + 1 * 8500;
+    const expected = 1 * COSTO_GRANEL_UG + (1000 / 42.5) * ROTURA * 720 + 1 * 8500;
     expect(r9.costo_total).toBeCloseTo(expected, 2);
   });
 
@@ -147,7 +149,7 @@ describe("Runner ORD 10 — Cemento UG 25 kg", () => {
   it("Calcula granel UG + 40 sacos 25 + cargue", async () => {
     const ctx = buildCtxUg(PROC10, RECETA);
     const r10 = await new Ord10CementoUg25().run({ ctx, proceso: PROC10, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 1 * COSTO_GRANEL_UG + 40 * 500 + 1 * 8500;
+    const expected = 1 * COSTO_GRANEL_UG + 40 * ROTURA * 500 + 1 * 8500;
     expect(r10.costo_total).toBeCloseTo(expected, 2);
   });
 });
@@ -165,7 +167,7 @@ describe("Runner ORD 11 — Cemento ART 42,5 kg", () => {
     const ctx = buildCtxArt(PROC11, RECETA);
     const writer = new InMemoryWriter();
     const r11 = await new Ord11CementoArt42().run({ ctx, proceso: PROC11, periodo: PERIODO, writer });
-    const expected = 1 * COSTO_GRANEL_ART + (1000 / 42.5) * 720 + 1 * 8500;
+    const expected = 1 * COSTO_GRANEL_ART + (1000 / 42.5) * ROTURA * 720 + 1 * 8500;
     expect(r11.costo_total).toBeCloseTo(expected, 2);
     const wrapper = writer.logs.find(l => l.calculo_tipo === "precio_componente_derivado" && l.material_id === MAT_CEM_ART_ID)!;
     expect(wrapper.depende_de).toContain(CALC_TOTAL_ORD7);
@@ -180,36 +182,24 @@ describe("Runner ORD 11 — Cemento ART 42,5 kg", () => {
   });
 });
 
-// ─── ORD 14 — Cemento Topex 50 kg ───────────────────────────────────────────
+// ─── ORD 14 — Cemento Topex 50 kg (cascadea de UG, Fase 3) ───────────────────
 describe("Runner ORD 14 — Cemento Topex 50 kg", () => {
   const PROC14: ProcesoMeta = makeProceso("proc-14", 14, "Cemento Topex 50 kg", 14);
   const RECETA = [
-    { material_id: MAT_CEM_ART_ID, porcentaje: 1.0, orden: 1 },
-    { material_id: MAT_SACO_50_ID, porcentaje: 20,  orden: 2 },
-    { material_id: MAT_CARGUE_ID,  porcentaje: 1.0, orden: 3 },
+    { material_id: MAT_CEM_UG_ID,     porcentaje: 1.0, orden: 1 },
+    { material_id: MAT_SACO_50_TPX_ID, porcentaje: 20,  orden: 2 },
+    { material_id: MAT_CARGUE_ID,     porcentaje: 1.0, orden: 3 },
   ];
 
-  it("Arrastra CEM_ART de ORD 7", async () => {
-    const ctx = buildCtxArt(PROC14, RECETA);
-    const r14 = await new Ord14CementoTopex50().run({ ctx, proceso: PROC14, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 1 * COSTO_GRANEL_ART + 20 * 800 + 1 * 8500;
+  it("Arrastra CEM_UG de ORD 6 (Topex cascadea de UG, no ART) con rotura", async () => {
+    const ctx = buildCtxUg(PROC14, RECETA);
+    const writer = new InMemoryWriter();
+    const r14 = await new Ord14CementoTopex50().run({ ctx, proceso: PROC14, periodo: PERIODO, writer });
+    // SACO_50_TPX precio 800; 20 sacos × rotura 1.02
+    const expected = 1 * COSTO_GRANEL_UG + 20 * ROTURA * 800 + 1 * 8500;
     expect(r14.costo_total).toBeCloseTo(expected, 2);
-  });
-});
-
-// ─── ORD 15 — Cemento UG TP ─────────────────────────────────────────────────
-describe("Runner ORD 15 — Cemento UG TP", () => {
-  const PROC15: ProcesoMeta = makeProceso("proc-15", 15, "Cemento UG TP", 15);
-  const RECETA = [
-    { material_id: MAT_CEM_UG_ID, porcentaje: 1.0, orden: 1 },
-    { material_id: MAT_CARGUE_ID, porcentaje: 1.0, orden: 2 },
-  ];
-
-  it("Arrastra CEM_UG de ORD 6 sin sacos", async () => {
-    const ctx = buildCtxUg(PROC15, RECETA);
-    const r15 = await new Ord15CementoUgTp().run({ ctx, proceso: PROC15, periodo: PERIODO, writer: new InMemoryWriter() });
-    const expected = 1 * COSTO_GRANEL_UG + 1 * 8500;
-    expect(r15.costo_total).toBeCloseTo(expected, 2);
+    const wrapper = writer.logs.find(l => l.calculo_tipo === "precio_componente_derivado" && l.material_id === MAT_CEM_UG_ID)!;
+    expect(wrapper.depende_de).toContain(CALC_TOTAL_ORD6);
   });
 });
 
@@ -264,21 +254,3 @@ describe("Runner ORD 16 — Fibrocemento", () => {
   });
 });
 
-// ─── ORD 19 — Big Bag ───────────────────────────────────────────────────────
-describe("Runner ORD 19 — Cemento Big Bag 1,5 T", () => {
-  const PROC19: ProcesoMeta = makeProceso("proc-19", 19, "Cemento Big Bag 1,5 T", 16);
-  // 1 big bag (1500 kg) ≈ 0.667 bags per ton; precio del big bag en COP/UN
-  const RECETA = [
-    { material_id: MAT_CEM_UG_ID,  porcentaje: 1.0,          orden: 1 },
-    { material_id: MAT_SACO_50_ID, porcentaje: 1000 / 1500,  orden: 2 }, // reutilizamos SACO_50 como proxy; receta real tendrá CEM_BIGBAG
-    { material_id: MAT_CARGUE_ID,  porcentaje: 1.0,          orden: 3 },
-  ];
-
-  it("Arrastra CEM_UG de ORD 6 + cargue (sin bolsa — material no sembrado aún)", async () => {
-    const ctx = buildCtxUg(PROC19, RECETA);
-    const r19 = await new Ord19CementoBigBag().run({ ctx, proceso: PROC19, periodo: PERIODO, writer: new InMemoryWriter() });
-    // Big Bag container material not seeded yet — cost = granel + cargue only
-    const expected = 1 * COSTO_GRANEL_UG + 1 * 8500;
-    expect(r19.costo_total).toBeCloseTo(expected, 2);
-  });
-});

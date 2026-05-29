@@ -38,10 +38,9 @@ import { Ord11CementoArt42 }    from "@/lib/calc/procesos/ord11_cemento_art_42";
 import { Ord12CementoGranelArt } from "@/lib/calc/procesos/ord12_cemento_granel_art";
 import { Ord13CementoArt50 }     from "@/lib/calc/procesos/ord13_cemento_art_50";
 import { Ord14CementoTopex50 }  from "@/lib/calc/procesos/ord14_cemento_topex_50";
-import { Ord15CementoUgTp }     from "@/lib/calc/procesos/ord15_cemento_ug_tp";
 import { Ord16Fibrocemento }    from "@/lib/calc/procesos/ord16_fibrocemento";
 import { Ord17CementoGranelUg }  from "@/lib/calc/procesos/ord17_cemento_granel_ug";
-import { Ord19CementoBigBag }          from "@/lib/calc/procesos/ord19_cemento_bigbag";
+import { Ord18CementoGranelArt }       from "@/lib/calc/procesos/ord18_cemento_granel_art";
 import { Ord20CombustiblesAlternos }   from "@/lib/calc/procesos/ord20_combustibles_alternos";
 import { Ord21Cementos }               from "@/lib/calc/procesos/ord21_cementos";
 import { Ord22FibrocementoGranel }     from "@/lib/calc/procesos/ord22_fibrocemento_granel";
@@ -63,10 +62,9 @@ export const CALCULADORES: Record<number, ProcesoCalculator> = {
   12: new Ord12CementoGranelArt(),
   13: new Ord13CementoArt50(),
   14: new Ord14CementoTopex50(),
-  15: new Ord15CementoUgTp(),
   16: new Ord16Fibrocemento(),
   17: new Ord17CementoGranelUg(),
-  19: new Ord19CementoBigBag(),
+  18: new Ord18CementoGranelArt(),
   20: new Ord20CombustiblesAlternos(),
   21: new Ord21Cementos(),
   22: new Ord22FibrocementoGranel(),
@@ -313,7 +311,7 @@ export async function loadContext(
     sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
     sb.from("energia_overrides").select("proceso_id, periodo, kwh_ton, precio_efectivo").eq("version_id", versionId),
     sb.from("mp_overrides").select("proceso_id, material_codigo, periodo, consumo_ton_ton, precio_cop_ton").eq("version_id", versionId),
-    sb.from("budget_versions").select("precios_fijos, fecha_inicio, fecha_fin, periodo_inicio, periodo_fin").eq("id", versionId).single(),
+    sb.from("budget_versions").select("precios_fijos, fecha_inicio, fecha_fin, periodo_inicio, periodo_fin, rotura_sacos").eq("id", versionId).single(),
     sb.from("precios_fijos_overrides").select("proceso_id, periodo, precio_cop_ton").eq("version_id", versionId),
   ]);
 
@@ -483,6 +481,10 @@ export async function loadContext(
     periodo_inicio?: string | null;
     periodo_fin?: string | null;
   } | null;
+  // Fase 3: factor de rotura de sacos (default 2% = 0.02 si la versión no lo trae).
+  const roturaSacos = (versionRow as { rotura_sacos?: number | null } | null)?.rotura_sacos != null
+    ? Number((versionRow as { rotura_sacos?: number }).rotura_sacos)
+    : 0.02;
   const fechaInicio = versionRange?.fecha_inicio ?? versionRange?.periodo_inicio ?? null;
   const fechaFin    = versionRange?.fecha_fin    ?? versionRange?.periodo_fin    ?? null;
   const periodosVersion = fechaInicio && fechaFin ? periodosEntre(fechaInicio, fechaFin) : [];
@@ -510,5 +512,6 @@ export async function loadContext(
     precioMpOverrideByKey,
     preciosFijos,
     preciosFijosByKey,
+    roturaSacos,
   };
 }

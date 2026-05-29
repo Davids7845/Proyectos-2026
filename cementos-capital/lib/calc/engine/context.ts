@@ -130,6 +130,9 @@ export interface CalcContext {
   preciosFijos?: boolean;
   // key: `${proceso_id}|${periodo}` → COP/Ton fijo
   preciosFijosByKey?: Map<string, number>;
+  // Fase 3: factor de rotura de sacos (ej 0.02 = 2%). Multiplica las unidades
+  // de saco por (1 + rotura) en los procesos de empaque. Default 0.02.
+  roturaSacos?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────

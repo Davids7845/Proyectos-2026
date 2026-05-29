@@ -9,6 +9,7 @@
 // which typically omits packaging rows.
 
 import { fn as calcMpReceta } from "@/lib/calc/formulas/costo_mp_receta";
+import { logComponentesAuxiliares } from "./_componentes_proceso";
 import type {
   CalcContext,
   CalcWriter,
@@ -33,6 +34,14 @@ export interface RunEmpaqueOpts {
   sacosPorTon?: number;
   /** Material code of the service (e.g. "CARGUE_CEM"). Optional. */
   serviceCodigo?: string;
+  /**
+   * Fase 3: si true, suma el costo de energía eléctrica del proceso (cuarto
+   * componente del empaque / tercero del granel). Se obtiene vía el helper
+   * común `logComponentesAuxiliares`; si no hay datos de energía, no contribuye.
+   */
+  conEnergia?: boolean;
+  /** Clave para resolver el consumo eléctrico en `kwh_ton_proceso`. */
+  energiaKey?: string;
 }
 
 export async function runEmpaqueProcess(
@@ -80,6 +89,10 @@ export async function runEmpaqueProcess(
     if (sacoMat) {
     const sacoP = ctx.preciosByMatPeriodo.get(`${sacoMat.id}|${periodo}|`);
     if (!sacoP) throw new Error(`${errPrefix} ${periodo}: falta precio para ${opts.sacoCodigo}`);
+    // Fase 3: aplicar rotura de sacos — las unidades por ton se inflan por
+    // (1 + rotura) para cubrir los sacos rotos en empaque (ej 20 → 20.4 @ 2%).
+    const rotura = ctx.roturaSacos ?? 0.02;
+    const sacosEfectivos = opts.sacosPorTon * (1 + rotura);
     const sacoId = await writer.log({
       calculo_tipo: "precio_componente_directo",
       proceso_id: proceso.id,
@@ -90,10 +103,10 @@ export async function runEmpaqueProcess(
       unidad: "COP/UN",
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
       formula_expresion: `precio = ${sacoP.precio} (precios_insumos)`,
-      parametros_entrada: { precio_directo: sacoP.precio },
+      parametros_entrada: { precio_directo: sacoP.precio, sacos_por_ton: opts.sacosPorTon, rotura, sacos_efectivos: sacosEfectivos },
       nivel_jerarquia: 2,
     });
-    componentes.push({ codigo: opts.sacoCodigo, nombre: sacoMat.nombre, pct: opts.sacosPorTon, precio: sacoP.precio, id: sacoId });
+    componentes.push({ codigo: opts.sacoCodigo, nombre: sacoMat.nombre, pct: sacosEfectivos, precio: sacoP.precio, id: sacoId });
     }   // end if sacoMat
   }   // end if sacoCodigo
 
@@ -145,20 +158,39 @@ export async function runEmpaqueProcess(
     rol_dependencias: rolDeps,
   });
 
-  // ─── 5. Total ──────────────────────────────────────────────────────────────
+  // ─── 5. Energía eléctrica (Fase 3) ────────────────────────────────────────
+  // Cuarto componente del empaque (tercero del granel). Vía el helper común;
+  // si no hay datos de energía para el proceso, no contribuye (costo_energia=null).
+  let costo_energia: number | null = null;
+  const totalDeps: UUID[] = [mpId];
+  const totalRolDeps: Record<string, string> = { [mpId]: "costo_mp" };
+  if (opts.conEnergia) {
+    const aux = await logComponentesAuxiliares(
+      { ctx, proceso, periodo, writer },
+      { conEnergia: true, energiaKey: opts.energiaKey, conCostosFijos: false },
+    );
+    if (aux.costo_energia != null && aux.energiaCalcId != null) {
+      costo_energia = aux.costo_energia;
+      totalDeps.push(aux.energiaCalcId);
+      totalRolDeps[aux.energiaCalcId] = "costo_energia";
+    }
+  }
+
+  // ─── 6. Total ──────────────────────────────────────────────────────────────
+  const costoTotal = mpResult.valor + (costo_energia ?? 0);
   const totalId = await writer.log({
     calculo_tipo: "costo_proceso_total",
     proceso_id: proceso.id,
     periodo,
     concepto: `Costo total proceso — ${proceso.nombre}`,
-    valor_resultado: mpResult.valor,
+    valor_resultado: costoTotal,
     unidad: "COP/Ton",
     formula_codigo: "COSTO_PROCESO_SUMA_v1",
-    formula_expresion: `costo_mp=${mpResult.valor} → total=${mpResult.valor}`,
-    parametros_entrada: { costo_mp: mpResult.valor },
+    formula_expresion: `costo_mp=${mpResult.valor}${costo_energia != null ? ` + energia=${costo_energia}` : ""} → total=${costoTotal}`,
+    parametros_entrada: { costo_mp: mpResult.valor, costo_energia: costo_energia ?? 0 },
     nivel_jerarquia: 0,
-    depende_de: [mpId],
-    rol_dependencias: { [mpId]: "costo_mp" },
+    depende_de: totalDeps,
+    rol_dependencias: totalRolDeps,
   });
 
   return {
@@ -166,14 +198,14 @@ export async function runEmpaqueProcess(
     periodo,
     costo_materia_prima: mpResult.valor,
     costo_combustible:   null,
-    costo_energia:       null,
+    costo_energia,
     costo_repuestos:     null,
     costo_servicios:     null,
-    costo_total:         mpResult.valor,
-    costo_por_ton:       mpResult.valor,
+    costo_total:         costoTotal,
+    costo_por_ton:       costoTotal,
     costo_recibido_arrastre:  0,
-    costo_total_arrastrado:   mpResult.valor,
-    costo_por_ton_arrastrado: mpResult.valor,
+    costo_total_arrastrado:   costoTotal,
+    costo_por_ton_arrastrado: costoTotal,
     calc_total_id: totalId,
   };
 }

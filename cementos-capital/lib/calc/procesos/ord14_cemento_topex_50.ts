@@ -1,5 +1,6 @@
 // ORD 14 — Cemento Topex 50 kg empacado
-// Topex is an ART variant; recipe: CEM_ART (ORD 7) + SACO_50_TPX (20/ton) + CARGUE_CEM
+// Decisión usuario (Fase 3): Topex cascadea de Cemento UG (ORD 6), NO de ART.
+// Recipe: CEM_UG (ORD 6) + SACO_50_TPX (20/ton + rotura) + CARGUE_CEM + Energía
 
 import { runEmpaqueProcess } from "./_empaque_base";
 import type {
@@ -15,11 +16,12 @@ export class Ord14CementoTopex50 implements ProcesoCalculator {
       productoNombre: "Cemento Topex 50 kg",
       calculoTipoMp: "costo_proceso_empaque_topex_50",
       conceptoMp: "Costo Granel + Empaque — Cemento Topex 50 kg",
-      granelOrd: 7,
-      granelCodigo: "CEM_ART",
+      granelOrd: 6,
+      granelCodigo: "CEM_UG",
       sacoCodigo: "SACO_50_TPX",
       sacosPorTon: 20,
       serviceCodigo: "CARGUE_CEM",
+      conEnergia: true,
     });
   }
 }
