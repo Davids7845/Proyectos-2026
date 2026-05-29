@@ -38,7 +38,7 @@ export default function ArrastradoPage() {
     supabase
       .from("budget_versions")
       .select("id, nombre")
-      .order("created_at", { ascending: false })
+      .order("creado_en", { ascending: false })
       .then(({ data: rows }) => {
         const all = (rows ?? []) as VersionRow[];
         setVersions(all.filter(v => v.id !== baseId));
