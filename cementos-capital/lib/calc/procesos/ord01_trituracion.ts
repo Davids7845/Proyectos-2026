@@ -3,7 +3,7 @@
 // Cadena de cálculo (un periodo):
 //   1) precio_caliza_martillo   = COSTO_CALIZA_MARTILLO_v1(precio_caliza, costo_martillo, pct_caliza, pct_martillo)
 //   2) costo_mp_prehomo         = COSTO_PREHOMO_v1(precio_caliza_martillo, precio_arcilla, pct_caliza_prehomo, pct_arcilla_prehomo)
-//   3) costo_total              = costo_mp_prehomo + (otros componentes si existen, omitidos en v1)
+//   3) costo_total              = costo_mp_prehomo + costos fijos (sin energía: ver nota abajo)
 //   4) costo_por_ton            = costo_total / 1 ton (la MP ya viene en COP/Ton)
 //
 // Materiales claves (por código en `materiales`):
@@ -173,7 +173,10 @@ export class Ord01Trituracion implements ProcesoCalculator {
     });
 
     // ─── 4) Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
-    // Nota: la energía ya está embebida en calcPrehomo; NO se agrega bloque energía.
+    // Nota: el costo unitario de Trituración en el Excel NO incluye un bloque de
+    // energía eléctrica (el target reconciliado es MP + fijos = 13.902,78 COP/Ton).
+    // Por eso conEnergia=false aunque el importer lea la fila de energía: esa
+    // energía no forma parte del costo unitario de este proceso en el modelo.
     // Fase 3: clasificamos (repuestos vs servicios/regalías) y registramos
     // placeholders (componentes en 0) para que la vista muestre todos.
     const aux = await logComponentesAuxiliares(

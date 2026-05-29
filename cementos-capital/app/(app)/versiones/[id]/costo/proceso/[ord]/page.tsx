@@ -118,12 +118,27 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
     if (tipo === "precio_componente_directo" || tipo === "precio_componente_derivado") {
       if (!row.material_id) continue;
       const mat = matById.get(row.material_id);
-      const pct = pctByMat.get(row.material_id) ?? null;
+      // El consumo normalmente vive en la receta; los procesos de empaque
+      // (ORD 8-14) usan receta hardcoded y guardan el consumo en
+      // parametros_entrada del log (sacos_efectivos para el saco, 1.0 para
+      // granel/servicio). Caemos a esos valores cuando no hay receta.
+      let pct = pctByMat.get(row.material_id) ?? null;
+      let consumoUnidad = "Ton/Ton";
+      if (pct == null) {
+        const sacos = Number(params.sacos_efectivos ?? params.sacos_por_ton ?? NaN);
+        if (Number.isFinite(sacos)) {
+          pct = sacos;
+          consumoUnidad = "UN/Ton";
+        } else if (tipo === "precio_componente_derivado" || tipo === "precio_componente_directo") {
+          // granel arrastrado o servicio (cargue): consumo unitario 1.0
+          pct = 1;
+        }
+      }
       const aporte = pct != null ? row.valor_resultado * pct : 0;
       componentes.push({
         concepto: mat?.nombre ?? row.material_id,
         consumo: pct,
-        consumo_unidad: "Ton/Ton",
+        consumo_unidad: consumoUnidad,
         precio_unit: row.valor_resultado,
         costo_por_ton: aporte,
         calc_id: row.id,
