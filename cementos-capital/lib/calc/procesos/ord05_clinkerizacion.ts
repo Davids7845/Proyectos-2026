@@ -77,6 +77,8 @@ export class Ord05Clinkerizacion implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "clinkerización",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
       extraDerivedComponents: [
         {
           material_codigo: "CARBONMOL",
