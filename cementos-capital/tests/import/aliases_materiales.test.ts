@@ -21,13 +21,13 @@ describe("ALIAS_MATERIAL_EXCEL (Fase 2d.1)", () => {
       ["cdr focus green antioquia",          "CDR_FG_ANT"],
       ["tdf sistema verde cundinamarca",     "TDF_SV_CUN"],
       ["diesel",                             "DIESEL"],
-      ["barras trituradora",                 "BARRAS_TRIT"],
+      ["barras trituradora",                 "BARRAS_TRITURADORA"],
       ["ductos del horno",                   "DUCT_HORNO"],
       ["enfriador horno",                    "ENFR_HORNO"],
       ["láminas crudo",                      "LAM_CRUDO"],
       ["placas y segmentos rodillo cemento", "PLAC_SEG_CEM"],
-      ["cargue clinker venta",               "CARG_CK_VTA"],
-      ["dosificacion sal",                   "DOSIF_SAL"],
+      ["cargue clinker venta",               "CARG_CK_VENTA"],
+      ["dosificacion sal",                   "DOSIFIC_SAL"],
       ["sal marina",                         "SAL_MARINA"],
       ["yesos prada",                        "YESO_PRADA"],
       ["yeso rey miranda",                   "YESO_MIRAND"],
@@ -36,8 +36,8 @@ describe("ALIAS_MATERIAL_EXCEL (Fase 2d.1)", () => {
       ["sacos 50 kg topex",                  "SACO_50_TPX"],
       ["sacos 42,5 kg art",                  "SACO_42_ART"],
       ["aditivo cemento",                    "ADITIVO_CEM"],
-      ["precio regalías arcilla",            "REG_ARCILLA"],
-      ["precio regalías caliza",             "REG_CALIZA"],
+      ["precio regalías arcilla",            "REGALIAS_ARCILLA"],
+      ["precio regalías caliza",             "REGALIAS_CALIZA"],
     ];
     for (const [excel, codigo] of cases) {
       expect(ALIAS_MATERIAL_EXCEL[excel], `alias "${excel}" debe mapear a ${codigo}`).toBe(codigo);

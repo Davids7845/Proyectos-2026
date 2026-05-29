@@ -216,6 +216,12 @@ export interface LoadReport {
   costos_fijos_insertados: number;
   energia_overrides_insertados: number;
   mp_overrides_insertados: number;
+  // Fase 3 — nuevas tablas
+  humedades_materiales_insertadas: number;
+  produccion_venta_periodo_insertadas: number;
+  precios_energia_periodo_insertados: number;
+  material_agregados_poblados: number;
+  rotura_sacos_actualizada: boolean;
   materiales_no_encontrados: string[];
   procesos_no_encontrados: string[];
   errores: ImportError[];

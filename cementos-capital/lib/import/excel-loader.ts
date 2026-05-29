@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import type { ParsedExcel, LoadReport } from "./types";
 import { ALIAS_MATERIAL_EXCEL, normalizeMaterialName } from "./aliases_materiales";
+import { poblarMaterialAgregados } from "./seed_agregados";
 
 type Client = SupabaseClient<Database>;
 
@@ -78,10 +79,19 @@ export async function loadParsedExcel(
     costos_fijos_insertados: 0,
     energia_overrides_insertados: 0,
     mp_overrides_insertados: 0,
+    // Fase 3
+    humedades_materiales_insertadas: 0,
+    produccion_venta_periodo_insertadas: 0,
+    precios_energia_periodo_insertados: 0,
+    material_agregados_poblados: 0,
+    rotura_sacos_actualizada: false,
     materiales_no_encontrados: [],
     procesos_no_encontrados: [],
     errores: [...parsed.errors],
   };
+
+  // ── Fase 3: poblar material_agregados (composiciones hardcoded) ──
+  report.material_agregados_poblados = await poblarMaterialAgregados(supabase);
 
   const idx = await loadMaterialesIndex(supabase);
   const noEncontrados = new Set<string>();
@@ -289,6 +299,22 @@ export async function loadParsedExcel(
         break;
       }
       report.humedades_insertadas += chunk.length;
+    }
+  }
+
+  // ── Fase 3: humedades_materiales ──
+  if (humRows.length > 0) {
+    await (supabase as any).from("humedades_materiales").delete().eq("version_id", versionId);
+    const hmRows = humRows.map(h => ({
+      version_id: versionId,
+      material_id: h.material_id,
+      periodo: h.periodo,
+      humedad: h.porcentaje,
+    }));
+    for (let i = 0; i < hmRows.length; i += 500) {
+      const chunk = hmRows.slice(i, i + 500);
+      const { error: hmErr } = await (supabase as any).from("humedades_materiales").insert(chunk);
+      if (!hmErr) report.humedades_materiales_insertadas += chunk.length;
     }
   }
 
@@ -540,6 +566,49 @@ export async function loadParsedExcel(
     }
   }
 
+  // ── Fase 3: produccion_venta_periodo ──
+  // Mapea ventas_proyectadas (por material) a procesos para la nueva tabla.
+  if (parsed.ventas.length > 0) {
+    const { data: procsVenta } = await supabase
+      .from("procesos")
+      .select("id, ord, material, nombre")
+      .eq("activo", true);
+
+    // Mapa nombre normalizado de venta → proceso_id
+    const VENTAS_PROCESO_MAP: Record<string, number> = {
+      "ug 50 kg": 8, "cemento ug 50 kg": 8, "ug 50kg": 8,
+      "ug 42,5 kg": 9, "cemento ug 42,5 kg": 9,
+      "ug 25 kg": 10, "cemento ug 25 kg": 10,
+      "art 42,5 kg": 11, "cemento art 42,5 kg": 11,
+      "topex 50 kg": 14, "cemento topex 50 kg": 14,
+      "granel ug": 17, "cemento granel ug": 17,
+      "granel art": 18, "cemento granel art": 18,
+      "fibrocemento": 16,
+      "fibrocemento granel": 22,
+      "cementos": 21,
+    };
+    const procesoIdByOrdVenta = new Map<number, string>();
+    for (const p of procsVenta ?? []) procesoIdByOrdVenta.set(p.ord, p.id);
+
+    const pvpRows: Array<{ version_id: string; proceso_id: string; periodo: string; toneladas: number }> = [];
+    for (const v of parsed.ventas) {
+      const key = v.material_nombre.trim().toLowerCase().replace(/\s+/g, " ");
+      const ord = VENTAS_PROCESO_MAP[key];
+      if (!ord) continue;
+      const procId = procesoIdByOrdVenta.get(ord);
+      if (!procId) continue;
+      pvpRows.push({ version_id: versionId, proceso_id: procId, periodo: v.periodo, toneladas: v.cantidad_ton });
+    }
+    if (pvpRows.length > 0) {
+      await (supabase as any).from("produccion_venta_periodo").delete().eq("version_id", versionId);
+      for (let i = 0; i < pvpRows.length; i += 500) {
+        const chunk = pvpRows.slice(i, i + 500);
+        const { error: pvpErr } = await (supabase as any).from("produccion_venta_periodo").insert(chunk);
+        if (!pvpErr) report.produccion_venta_periodo_insertadas += chunk.length;
+      }
+    }
+  }
+
   // ──────────────── Parámetros de energía ────────────────
   // Agrupar por periodo: precio_contrato, precio_restricciones, cargos_fijos,
   // kwh_ton_proceso (jsonb proceso→kWh/Ton derivado de la sección Rendimiento),
@@ -667,6 +736,42 @@ export async function loadParsedExcel(
     }
   }
 
+  // ── Fase 3: precios_energia_periodo ──
+  // Extrae precio_kwh y componentes de los parametros_energia ya procesados.
+  if (parsed.parametros_energia.length > 0) {
+    type PepRow = {
+      version_id: string; periodo: string;
+      precio_kwh: number | null;
+      componente_contrato: number | null;
+      componente_restricciones: number | null;
+      componente_cargos_fijos: number | null;
+    };
+    const pepByPeriodo = new Map<string, PepRow>();
+    for (const e of parsed.parametros_energia) {
+      if (!pepByPeriodo.has(e.periodo)) {
+        pepByPeriodo.set(e.periodo, {
+          version_id: versionId, periodo: e.periodo,
+          precio_kwh: null, componente_contrato: null,
+          componente_restricciones: null, componente_cargos_fijos: null,
+        });
+      }
+      const row = pepByPeriodo.get(e.periodo)!;
+      if (e.campo === "precio_energia_total") row.precio_kwh = e.valor;
+      else if (e.campo === "precio_contrato") row.componente_contrato = e.valor;
+      else if (e.campo === "precio_restricciones") row.componente_restricciones = e.valor;
+      else if (e.campo === "cargos_fijos") row.componente_cargos_fijos = e.valor;
+    }
+    const pepRows = Array.from(pepByPeriodo.values()).filter(r => r.precio_kwh != null);
+    if (pepRows.length > 0) {
+      await (supabase as any).from("precios_energia_periodo").delete().eq("version_id", versionId);
+      for (let i = 0; i < pepRows.length; i += 500) {
+        const chunk = pepRows.slice(i, i + 500);
+        const { error: pepErr } = await (supabase as any).from("precios_energia_periodo").insert(chunk);
+        if (!pepErr) report.precios_energia_periodo_insertados += chunk.length;
+      }
+    }
+  }
+
   // ──────────────── Rendimientos ────────────────
   // Agrupa por (proceso, periodo). Mapea proceso por nombre, ignorando "Cemento Total"
   // que es un agregado (no existe como proceso individual en BD).
@@ -759,6 +864,19 @@ export async function loadParsedExcel(
       const { error } = await supabase.from("roturas_sacos").insert(chunk);
       if (error) { report.errores.push({ seccion: "rotura", row_excel: null, mensaje: error.message }); break; }
       report.roturas_insertadas += chunk.length;
+    }
+  }
+
+  // ── Fase 3: rotura_sacos en budget_versions ──
+  // Toma el primer valor de rotura encontrado (aplica a toda la versión).
+  if (parsed.roturas.length > 0) {
+    const primerValor = parsed.roturas[0].porcentaje;
+    if (primerValor != null && Number.isFinite(primerValor)) {
+      const { error: rotErr } = await (supabase as any)
+        .from("budget_versions")
+        .update({ rotura_sacos: primerValor })
+        .eq("id", versionId);
+      if (!rotErr) report.rotura_sacos_actualizada = true;
     }
   }
 
