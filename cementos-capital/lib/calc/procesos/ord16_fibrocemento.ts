@@ -9,6 +9,7 @@ import type {
 
 const DERIVED_BY_CODIGO: Record<string, number> = {
   CLINKER001: 5,
+  CALIZATRI:  2,
 };
 
 export class Ord16Fibrocemento implements ProcesoCalculator {
@@ -24,6 +25,8 @@ export class Ord16Fibrocemento implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "fibrocemento",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
     });
   }
 }

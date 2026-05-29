@@ -10,6 +10,7 @@ import { loadExcelFixture, extractPresupuesto } from "../fixtures/load_excel_fix
 import { buildContextFromExcel } from "../fixtures/build_context_from_excel";
 import { InMemoryWriter } from "@/lib/calc/engine/writer";
 import { Ord01Trituracion }    from "@/lib/calc/procesos/ord01_trituracion";
+import { Ord02Adiciones }      from "@/lib/calc/procesos/ord02_adiciones";
 import { Ord03MoliendaCrudo }  from "@/lib/calc/procesos/ord03_molienda_crudo";
 import { Ord04MoliendaCarbon } from "@/lib/calc/procesos/ord04_molienda_carbon";
 import { Ord05Clinkerizacion } from "@/lib/calc/procesos/ord05_clinkerizacion";
@@ -116,6 +117,12 @@ describe("Reconciliación contra Excel real (Presupuesto)", () => {
     const r20 = await new Ord20CombustiblesAlternos().run({ ctx: setup.ctx, proceso: ord20, periodo: PERIODO, writer });
     setup.ctx.costoProcesoByKey.set(`${ord20.id}|${PERIODO}`, {
       costo_total: r20.costo_total, costo_por_ton: r20.costo_por_ton, calc_total_id: r20.calc_total_id,
+    });
+    // ORD 2 antes de ORD 6/7/16 (CALIZATRI es cascada de Adiciones)
+    const ord2 = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 2);
+    const r2 = await new Ord02Adiciones().run({ ctx: setup.ctx, proceso: ord2, periodo: PERIODO, writer });
+    setup.ctx.costoProcesoByKey.set(`${ord2.id}|${PERIODO}`, {
+      costo_total: r2.costo_total, costo_por_ton: r2.costo_por_ton, calc_total_id: r2.calc_total_id,
     });
     const ord5 = setup.ctx.procesos.find((p: { ord: number }) => p.ord === 5);
     const r5 = await new Ord05Clinkerizacion().run({ ctx: setup.ctx, proceso: ord5, periodo: PERIODO, writer });

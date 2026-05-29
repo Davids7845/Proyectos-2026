@@ -13,6 +13,8 @@ import type {
 
 const DERIVED_BY_CODIGO: Record<string, number> = {
   CLINKER001: 5,
+  // CALIZATRI usa la override de precio del Excel (COSTO_MATERIAL_ROWS[6], row 79)
+  // que ya refleja el costo de ORD 2. No se cascadea para no reemplazar ese override.
 };
 
 export class Ord06CementoUg implements ProcesoCalculator {
@@ -33,6 +35,8 @@ export class Ord06CementoUg implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "cemento ug",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
     });
   }
 }

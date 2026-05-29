@@ -11,6 +11,7 @@ import { buildContextFromExcel } from "../fixtures/build_context_from_excel";
 import { InMemoryWriter } from "@/lib/calc/engine/writer";
 import { generateMovimientos } from "@/lib/sap/generate-movimientos";
 import { Ord01Trituracion }         from "@/lib/calc/procesos/ord01_trituracion";
+import { Ord02Adiciones }           from "@/lib/calc/procesos/ord02_adiciones";
 import { Ord03MoliendaCrudo }       from "@/lib/calc/procesos/ord03_molienda_crudo";
 import { Ord04MoliendaCarbon }      from "@/lib/calc/procesos/ord04_molienda_carbon";
 import { Ord05Clinkerizacion }      from "@/lib/calc/procesos/ord05_clinkerizacion";
@@ -209,6 +210,9 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
 
     const r1 = await new Ord01Trituracion().run({ ctx, proceso: proc(1), periodo: PERIODO, writer });
     ctx.costoProcesoByKey.set(`${proc(1).id}|${PERIODO}`, { costo_total: r1.costo_total, costo_por_ton: r1.costo_por_ton, calc_total_id: r1.calc_total_id });
+
+    const r2 = await new Ord02Adiciones().run({ ctx, proceso: proc(2), periodo: PERIODO, writer });
+    ctx.costoProcesoByKey.set(`${proc(2).id}|${PERIODO}`, { costo_total: r2.costo_total, costo_por_ton: r2.costo_por_ton, calc_total_id: r2.calc_total_id });
 
     const r3 = await new Ord03MoliendaCrudo().run({ ctx, proceso: proc(3), periodo: PERIODO, writer });
     ctx.costoProcesoByKey.set(`${proc(3).id}|${PERIODO}`, { costo_total: r3.costo_total, costo_por_ton: r3.costo_por_ton, calc_total_id: r3.calc_total_id });

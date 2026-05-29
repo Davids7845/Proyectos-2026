@@ -13,6 +13,7 @@ import type {
 
 const DERIVED_BY_CODIGO: Record<string, number> = {
   CLINKER001: 5,
+  CALIZATRI:  2,
 };
 
 export class Ord07CementoArt implements ProcesoCalculator {
@@ -33,6 +34,8 @@ export class Ord07CementoArt implements ProcesoCalculator {
       conEnergia: true,
       energiaKey: "cemento art",
       conCostosFijos: true,
+      clasificar: true,
+      registrarPlaceholders: true,
     });
   }
 }
