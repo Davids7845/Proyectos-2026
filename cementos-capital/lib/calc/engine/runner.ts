@@ -42,7 +42,6 @@ import { Ord16Fibrocemento }    from "@/lib/calc/procesos/ord16_fibrocemento";
 import { Ord17CementoGranelUg }  from "@/lib/calc/procesos/ord17_cemento_granel_ug";
 import { Ord18CementoGranelArt }       from "@/lib/calc/procesos/ord18_cemento_granel_art";
 import { Ord20CombustiblesAlternos }   from "@/lib/calc/procesos/ord20_combustibles_alternos";
-import { Ord21Cementos }               from "@/lib/calc/procesos/ord21_cementos";
 import { Ord22FibrocementoGranel }     from "@/lib/calc/procesos/ord22_fibrocemento_granel";
 
 // Calculadoras registradas por `ord`. Procesos sin entry se omiten (con warning).
@@ -66,7 +65,8 @@ export const CALCULADORES: Record<number, ProcesoCalculator> = {
   17: new Ord17CementoGranelUg(),
   18: new Ord18CementoGranelArt(),
   20: new Ord20CombustiblesAlternos(),
-  21: new Ord21Cementos(),
+  // ORD 21: vista derivada — calculada on-the-fly en
+  // /api/versiones/[id]/cementos-consolidado (mig 025).
   22: new Ord22FibrocementoGranel(),
 };
 
@@ -131,8 +131,10 @@ export async function runCalculation(
       .filter(p => !opts.procesosOrd || opts.procesosOrd.includes(p.ord))
       .sort((a, b) => a.orden_topologico - b.orden_topologico);
 
-    // Reportar omitidos (proceso sin calculador registrado)
+    // Reportar omitidos (proceso sin calculador registrado).
+    // ORD 21 (Cementos Consolidado) es una vista derivada — no se omite.
     for (const p of ctx.procesos) {
+      if (p.ord === 21) continue;
       if (!CALCULADORES[p.ord]) {
         omitidos.push({ ord: p.ord, razon: "calculador no implementado" });
       }

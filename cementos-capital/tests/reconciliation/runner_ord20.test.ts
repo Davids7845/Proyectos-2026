@@ -1,8 +1,9 @@
-// Tests de ORD 20 (Combustibles Alternos) y ORD 21 (Cementos consolidador).
+// Tests de ORD 20 (Combustibles Alternos).
+// Fase 3: ORD 21 dejó de tener calculadora — es una vista derivada que se
+// computa on-the-fly en /api/versiones/[id]/cementos-consolidado.
 
 import { describe, it, expect } from "vitest";
 import { Ord20CombustiblesAlternos } from "@/lib/calc/procesos/ord20_combustibles_alternos";
-import { Ord21Cementos }             from "@/lib/calc/procesos/ord21_cementos";
 import { InMemoryWriter } from "@/lib/calc/engine/writer";
 import type { CalcContext, ProcesoMeta } from "@/lib/calc/engine/context";
 
@@ -92,97 +93,5 @@ describe("Runner ORD 20 — Combustibles Alternos", () => {
   });
 });
 
-// ─── ORD 21 ─────────────────────────────────────────────────────────────────
-
-function buildCtxOrd21(costosDisponibles: Array<{ ord: number; costo: number }>): CalcContext {
-  const PROC21_ID = "proc-21";
-  const procesos: ProcesoMeta[] = [
-    ...costosDisponibles.map(c => ({
-      id: `proc-${c.ord}`,
-      ord: c.ord,
-      material: `CEMENTO ORD${c.ord}`,
-      nombre: `Cemento ORD ${c.ord}`,
-      orden_topologico: c.ord,
-    })),
-    { id: PROC21_ID, ord: 21, material: "CEMENTOS", nombre: "Cementos", orden_topologico: 17 },
-  ];
-
-  const costoProcesoByKey = new Map(
-    costosDisponibles.map(c => [
-      `proc-${c.ord}|${PERIODO}`,
-      { costo_total: c.costo, costo_por_ton: c.costo, calc_total_id: `calc-${c.ord}` },
-    ])
-  );
-
-  return {
-    versionId: "v", runId: "r", periodos: [PERIODO],
-    procesos,
-    materialesById: new Map(), materialesByCodigo: new Map(),
-    preciosByMatPeriodo: new Map(), pctConsumoByKey: new Map(),
-    recetasByProcesoPeriodo: new Map(),
-    formulaIdByCodigo: new Map([["COSTO_PROCESO_SUMA_v1", "f-sm"]]),
-    costoProcesoByKey,
-  };
-}
-
-describe("Runner ORD 21 — Cementos (consolidador)", () => {
-  it("Promedia costos de todos los cementos disponibles", async () => {
-    const costos = [
-      { ord: 6,  costo: 250_000 },
-      { ord: 8,  costo: 274_500 },
-      { ord: 9,  costo: 277_600 },
-      { ord: 11, costo: 285_000 },
-    ];
-    const ctx = buildCtxOrd21(costos);
-    const proc21 = ctx.procesos.find(p => p.ord === 21)!;
-
-    const r21 = await new Ord21Cementos().run({
-      ctx, proceso: proc21, periodo: PERIODO, writer: new InMemoryWriter(),
-    });
-
-    const expected = costos.reduce((s, c) => s + c.costo, 0) / costos.length;
-    expect(r21.costo_total).toBeCloseTo(expected, 2);
-  });
-
-  it("Crea N+1 log entries: uno por fuente + costo_proceso_total", async () => {
-    const costos = [
-      { ord: 6, costo: 250_000 },
-      { ord: 8, costo: 274_500 },
-    ];
-    const ctx = buildCtxOrd21(costos);
-    const proc21 = ctx.procesos.find(p => p.ord === 21)!;
-    const writer = new InMemoryWriter();
-
-    await new Ord21Cementos().run({ ctx, proceso: proc21, periodo: PERIODO, writer });
-
-    // 2 costo_referencia_cemento + 1 costo_proceso_total = 3
-    expect(writer.logs).toHaveLength(3);
-    expect(writer.logs.filter(l => l.calculo_tipo === "costo_referencia_cemento").length).toBe(2);
-    expect(writer.logs.find(l => l.calculo_tipo === "costo_proceso_total")).toBeDefined();
-    // 2 (refs → sus totales) + 2 (total → refs) = 4 deps
-    expect(writer.deps).toHaveLength(4);
-  });
-
-  it("Falla si ningún proceso de cemento fue calculado", async () => {
-    const ctx = buildCtxOrd21([]);
-    // Añadir ORD 21 pero sin datos
-    ctx.procesos.push({ id: "proc-21", ord: 21, material: "CEMENTOS", nombre: "Cementos", orden_topologico: 17 });
-    const proc21 = ctx.procesos.find(p => p.ord === 21)!;
-    await expect(
-      new Ord21Cementos().run({ ctx, proceso: proc21, periodo: PERIODO, writer: new InMemoryWriter() })
-    ).rejects.toThrow(/ningún proceso de cemento calculado/);
-  });
-
-  it("Omite graciosamente los ORDs no calculados y usa solo los disponibles", async () => {
-    // Solo ORD 6 calculado, el resto sin datos
-    const costos = [{ ord: 6, costo: 250_000 }];
-    const ctx = buildCtxOrd21(costos);
-    const proc21 = ctx.procesos.find(p => p.ord === 21)!;
-
-    const r21 = await new Ord21Cementos().run({
-      ctx, proceso: proc21, periodo: PERIODO, writer: new InMemoryWriter(),
-    });
-    // Solo 1 valor disponible → promedio = ese mismo valor
-    expect(r21.costo_total).toBeCloseTo(250_000, 2);
-  });
-});
+// ORD 21: vista derivada — sin tests de calculadora aquí. Cobertura en
+// tests/api/cementos_consolidado.test.ts (Sub-sesión 7).

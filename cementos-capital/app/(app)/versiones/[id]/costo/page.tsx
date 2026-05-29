@@ -79,6 +79,55 @@ export default async function CostoPivotPage({
     });
   }
 
+  // ── Fase 3: ORD 21 derivado (vista) — promedio ponderado de cementos finales ─
+  const ORDS_CONSOLIDADOS = new Set([8, 9, 10, 11, 14, 16, 17, 18, 22]);
+  const procesosArr = Array.from(procesos.values());
+  const idsConsolidables: string[] = [];
+  procesosArr.forEach(f => {
+    if (ORDS_CONSOLIDADOS.has(f.ord)) idsConsolidables.push(f.proceso_id);
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: prodRows } = await (supabase as any)
+    .from("produccion_venta_periodo")
+    .select("proceso_id, periodo, toneladas")
+    .eq("version_id", id)
+    .in("proceso_id", idsConsolidables);
+  const prodByKey = new Map<string, number>();
+  for (const p of (prodRows ?? []) as Array<{ proceso_id: string; periodo: string; toneladas: number | null }>) {
+    prodByKey.set(`${p.proceso_id}|${p.periodo}`, Number(p.toneladas ?? 0));
+  }
+  const ord21Por: Map<string, CostoCell> = new Map();
+  Array.from(periodosSet).forEach(per => {
+    let sumaCxP = 0;
+    let sumaP = 0;
+    procesosArr.forEach(f => {
+      if (!ORDS_CONSOLIDADOS.has(f.ord)) return;
+      const c = f.byPeriodo.get(per)?.costo_por_ton ?? 0;
+      const p = prodByKey.get(`${f.proceso_id}|${per}`) ?? 0;
+      sumaCxP += c * p;
+      sumaP += p;
+    });
+    if (sumaP > 0) {
+      ord21Por.set(per, { costo_por_ton: sumaCxP / sumaP, costo_total: sumaCxP, calc_total_id: null });
+    }
+  });
+  // Si la versión tiene un registro de ORD 21 en `procesos`, lo añadimos como
+  // fila derivada (sin link a árbol — calc_total_id null lo deshabilita).
+  const procOrd21 = (await supabase
+    .from("procesos")
+    .select("id, nombre, orden_topologico")
+    .eq("ord", 21)
+    .maybeSingle()).data;
+  if (procOrd21 && ord21Por.size > 0) {
+    procesos.set(procOrd21.id, {
+      proceso_id: procOrd21.id,
+      ord: 21,
+      orden_topologico: procOrd21.orden_topologico ?? 999,
+      nombre: procOrd21.nombre ?? "Cementos consolidado",
+      byPeriodo: ord21Por,
+    });
+  }
+
   const filas = Array.from(procesos.values()).sort((a, b) => a.orden_topologico - b.orden_topologico);
   const periodos = Array.from(periodosSet).sort();
 
@@ -256,12 +305,23 @@ export default async function CostoPivotPage({
                   >
                     <span className="text-xs text-slate-400 mr-2 tabular-nums">{String(f.ord).padStart(2, "0")}</span>
                     <Link
-                      href={`/versiones/${id}/costo/proceso/${f.ord}`}
+                      href={f.ord === 21
+                        ? `/versiones/${id}/cementos-consolidado`
+                        : `/versiones/${id}/costo/proceso/${f.ord}`}
                       className="hover:underline font-medium"
                       style={{ color: BRAND.primary }}
                     >
                       {f.nombre}
                     </Link>
+                    {f.ord === 21 && (
+                      <span
+                        className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: BRAND.primarySoft, color: BRAND.primaryDark }}
+                        title="Vista derivada — promedio ponderado de los 9 cementos finales"
+                      >
+                        Derivado
+                      </span>
+                    )}
                   </td>
                   {periodos.map(per => {
                     const cell = f.byPeriodo.get(per);
