@@ -158,6 +158,7 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
       });
       total_costo_ton += row.valor_resultado;
     } else if (tipo === "costo_fijo_proceso") {
+      if (row.valor_resultado === 0) continue;
       componentes.push({
         concepto: String(params.nombre ?? params.codigo ?? row.concepto ?? "Costo fijo"),
         consumo: 1,
