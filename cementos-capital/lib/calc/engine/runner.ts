@@ -111,7 +111,21 @@ export async function runCalculation(
 
   try {
     // ─── Limpiar resultados de runs anteriores para esta versión ──
-    // Evita "duplicate key" al re-calcular: costo_proceso tiene unique(version_id, proceso_id, periodo).
+    // 1) calculation_log_deps primero: la FK depende_de_id es ON DELETE RESTRICT, hay que
+    //    eliminar los deps antes de poder borrar los logs que son referenciados como depende_de_id.
+    //    (Si la migración 027 ya cambió la FK a CASCADE, este paso es redundante pero inofensivo.)
+    const { data: oldLogIds } = await (supabase as any)
+      .from("calculation_log").select("id").eq("version_id", opts.versionId);
+    if (oldLogIds && oldLogIds.length > 0) {
+      const ids = (oldLogIds as Array<{ id: string }>).map(r => r.id);
+      // Borrar deps en lotes de 200 (limite de URL seguro)
+      for (let i = 0; i < ids.length; i += 200) {
+        await (supabase as any).from("calculation_log_deps").delete()
+          .in("depende_de_id", ids.slice(i, i + 200));
+      }
+      await supabase.from("calculation_log").delete().eq("version_id", opts.versionId);
+    }
+    // 2) costo_proceso: tiene unique(version_id, proceso_id, periodo) — limpiar para re-insertar.
     await supabase.from("costo_proceso").delete().eq("version_id", opts.versionId);
 
     // ─── Sembrar formula_definitions (upsert) ─────────────────────
