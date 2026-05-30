@@ -302,6 +302,37 @@ function periodosEntre(inicioISO: string, finISO: string): Periodo[] {
   return out;
 }
 
+/**
+ * Trae TODAS las filas de una tabla filtradas por version_id, paginando de a
+ * 1000 (el límite por defecto de Supabase/PostgREST). Sin esto, versiones con
+ * muchos materiales × periodos pierden filas silenciosamente — p.ej. v14 tiene
+ * 1292 precios_insumos y la query plana sólo devolvía las primeras 1000,
+ * provocando "falta precio para X" en periodos arbitrarios.
+ */
+async function fetchAllByVersion(
+  client: any,
+  table: string,
+  columns: string,
+  versionId: UUID,
+): Promise<{ data: any[] | null; error: { message: string } | null }> {
+  const PAGE = 1000;
+  const all: any[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await client
+      .from(table)
+      .select(columns)
+      .eq("version_id", versionId)
+      .range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    const rows = data ?? [];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: all, error: null };
+}
+
 export async function loadContext(
   supabase: Client,
   versionId: UUID,
@@ -325,14 +356,14 @@ export async function loadContext(
   ] = await Promise.all([
     supabase.from("procesos").select("id, ord, material, nombre, orden_topologico").eq("activo", true),
     supabase.from("materiales").select("id, codigo, nombre, unidad_base").eq("activo", true),
-    supabase.from("precios_insumos").select("material_id, proveedor, periodo, precio_unitario, unidad").eq("version_id", versionId),
-    supabase.from("porcentajes_consumo").select("material_id, proveedor, periodo, porcentaje").eq("version_id", versionId),
+    fetchAllByVersion(supabase, "precios_insumos", "material_id, proveedor, periodo, precio_unitario, unidad", versionId),
+    fetchAllByVersion(supabase, "porcentajes_consumo", "material_id, proveedor, periodo, porcentaje", versionId),
     // Receta con embed de receta_lineas filtrado por FK — evita el límite de 1000 filas
     // global de Supabase cuando hay muchas versiones acumuladas.
     supabase.from("recetas").select("id, producto_id, proceso_id, periodo, receta_lineas(receta_id, material_id, porcentaje, orden)").eq("version_id", versionId),
     sb.from("parametros_energia").select("periodo, precio_contrato, precio_restricciones, cargos_fijos, kwh_ton_proceso, pci_combustibles, kcal_tck_total, pci_ponderado_horno, composicion_horno, kcal_tck, pct_energia_carbones, pct_energia_alternos, pct_energia_diesel, pci_ponderado_carbones, pci_ponderado_alternos, pci_ponderado_diesel").eq("version_id", versionId),
     supabase.from("rendimientos").select("proceso_id, periodo, horas_mes, produccion_ton, horas_operacion_efectivas, rendimiento_ton_hr, disponibilidad, utilizacion, oee").eq("version_id", versionId),
-    sb.from("costos_fijos_proceso").select("proceso_id, periodo, codigo, nombre, costo_por_ton").eq("version_id", versionId),
+    fetchAllByVersion(sb, "costos_fijos_proceso", "proceso_id, periodo, codigo, nombre, costo_por_ton", versionId),
     sb.from("energia_overrides").select("proceso_id, periodo, kwh_ton, precio_efectivo").eq("version_id", versionId),
     sb.from("mp_overrides").select("proceso_id, material_codigo, periodo, consumo_ton_ton, precio_cop_ton").eq("version_id", versionId),
     sb.from("budget_versions").select("precios_fijos, fecha_inicio, fecha_fin, periodo_inicio, periodo_fin, rotura_sacos").eq("id", versionId).single(),
