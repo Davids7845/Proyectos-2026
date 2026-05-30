@@ -4,7 +4,7 @@
 //              Material Dique + Desmantelamiento + Regalías.
 
 import { fn as calcMezcla }          from "@/lib/calc/formulas/costo_mezcla_ponderada";
-import { logComponentesAuxiliares }  from "./_componentes_proceso";
+import { logComponentesAuxiliares, produccionNormalizada, writeMovimientosMp }  from "./_componentes_proceso";
 import type {
   CalcWriter,
   ProcesoCalculator,
@@ -97,11 +97,20 @@ export class Ord02Adiciones implements ProcesoCalculator {
       nivel_jerarquia: 1,
     });
 
+    // ─── Capa de agregación: movimiento de MP (100% caliza) ─────────────
+    const produccion = produccionNormalizada(ctx, proceso.id, periodo);
+    await writeMovimientosMp(
+      { ctx, proceso, periodo, writer },
+      produccion,
+      [{ codigo: mat.codigo, nombre: mat.nombre, pct: 1.0, precio: precio.precio }],
+    );
+
     // ─── Energía eléctrica + Costos fijos ───────────────────────────────
     // Fase 3: clasificar (repuestos vs servicios/regalías) + placeholders.
     const aux = await logComponentesAuxiliares(
       { ctx, proceso, periodo, writer },
-      { conEnergia: true, energiaKey: "adiciones", conCostosFijos: true, clasificar: true, registrarPlaceholders: true },
+      { conEnergia: true, energiaKey: "adiciones", conCostosFijos: true, clasificar: true, registrarPlaceholders: true,
+        movimientos: { produccion } },
     );
     const costo_energia   = aux.costo_energia;
     const energiaCalcId   = aux.energiaCalcId;

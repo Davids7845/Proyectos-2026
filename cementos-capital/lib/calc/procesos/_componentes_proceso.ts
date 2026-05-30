@@ -34,6 +34,13 @@ export interface AuxComponentesOpts {
    * El total agregado (`costo_servicios`) no cambia — es la suma de todos.
    */
   clasificar?: boolean;
+  /**
+   * Capa de agregación (plan_movimientos): si se pasa, el helper escribe un
+   * movimiento por componente auxiliar (energía + cada costo fijo) usando la
+   * producción normalizada indicada. Permite el cálculo de promedio ponderado.
+   * Si se omite, no se escriben movimientos (comportamiento original).
+   */
+  movimientos?: { produccion: number };
 }
 
 export type CategoriaComponente =
@@ -102,6 +109,18 @@ export async function logComponentesAuxiliares(
         },
         nivel_jerarquia: 1,
       });
+      if (opts.movimientos) {
+        const prod = opts.movimientos.produccion;
+        await writer.writeMovimiento({
+          proceso_id: proceso.id, periodo, tipo: "energia",
+          codigo: `energia_${opts.energiaKey ?? proceso.material?.toLowerCase() ?? "proceso"}`,
+          nombre: "Energía Eléctrica",
+          produccion_ton: prod,
+          cantidad:       enOver.kwh_ton * prod,
+          costo_unitario: enOver.precio_efectivo,
+          valor:          valor * prod,
+        }, ctx.versionId, ctx.runId);
+      }
     } else {
       const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
       if (paramsEner) {
@@ -140,6 +159,19 @@ export async function logComponentesAuxiliares(
             },
             nivel_jerarquia: 1,
           });
+          if (opts.movimientos) {
+            const prod = opts.movimientos.produccion;
+            const precio_kwh = kwh > 0 ? f.valor / kwh : 0;
+            await writer.writeMovimiento({
+              proceso_id: proceso.id, periodo, tipo: "energia",
+              codigo: `energia_${opts.energiaKey ?? proceso.material?.toLowerCase() ?? "proceso"}`,
+              nombre: "Energía Eléctrica",
+              produccion_ton: prod,
+              cantidad:       kwh * prod,
+              costo_unitario: precio_kwh,
+              valor:          f.valor * prod,
+            }, ctx.versionId, ctx.runId);
+          }
         }
       }
     }
@@ -159,6 +191,19 @@ export async function logComponentesAuxiliares(
     const items = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
     let suma = 0;
     for (const it of items) {
+      // Capa de agregación: un movimiento por costo fijo (incluye los 0, que
+      // aportan valor 0 al ponderado pero mantienen el catálogo de componentes).
+      if (opts.movimientos) {
+        const prod = opts.movimientos.produccion;
+        await writer.writeMovimiento({
+          proceso_id: proceso.id, periodo, tipo: "fijo",
+          codigo: it.codigo, nombre: it.nombre,
+          produccion_ton: prod,
+          cantidad:       prod,
+          costo_unitario: it.costo_por_ton,
+          valor:          it.costo_por_ton * prod,
+        }, ctx.versionId, ctx.runId);
+      }
       // Placeholder (valor 0): registrar sólo si opts.registrarPlaceholders.
       if (it.costo_por_ton === 0) {
         if (!opts.registrarPlaceholders) continue;
@@ -211,4 +256,41 @@ export async function logComponentesAuxiliares(
     componentesRegistrados,
     placeholderCalcIds,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Capa de agregación (plan_movimientos): helpers compartidos
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Producción normalizada del proceso×periodo para el cálculo del ponderado.
+ * Usa la producción real de `rendimientos` si existe; si no, normaliza a 1 ton
+ * (promedio ponderado = promedio simple de los totales mensuales).
+ */
+export function produccionNormalizada(ctx: CalcContext, proceso_id: UUID, periodo: Periodo): number {
+  const prod = ctx.rendimientosByProcesoPeriodo?.get(`${proceso_id}|${periodo}`)?.produccion_ton;
+  return prod != null && prod > 0 ? prod : 1;
+}
+
+/**
+ * Escribe un movimiento de materia prima por cada componente de receta.
+ * cantidad = pct × producción · valor = precio × pct × producción.
+ * La suma de los `valor` reproduce el costo de MP del proceso.
+ */
+export async function writeMovimientosMp(
+  args: { ctx: CalcContext; proceso: ProcesoMeta; periodo: Periodo; writer: CalcWriter },
+  produccion: number,
+  componentes: Array<{ codigo: string; nombre: string; pct: number; precio: number }>,
+): Promise<void> {
+  const { ctx, proceso, periodo, writer } = args;
+  for (const c of componentes) {
+    await writer.writeMovimiento({
+      proceso_id: proceso.id, periodo, tipo: "mp",
+      codigo: c.codigo, nombre: c.nombre,
+      produccion_ton: produccion,
+      cantidad:       c.pct * produccion,
+      costo_unitario: c.precio,
+      valor:          c.precio * c.pct * produccion,
+    }, ctx.versionId, ctx.runId);
+  }
 }

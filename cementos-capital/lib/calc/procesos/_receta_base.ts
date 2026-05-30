@@ -13,7 +13,7 @@
 // ORD 7 (Cemento ART) y futuros procesos con la misma estructura.
 
 import { fn as calcMpReceta } from "@/lib/calc/formulas/costo_mp_receta";
-import { logComponentesAuxiliares } from "./_componentes_proceso";
+import { logComponentesAuxiliares, produccionNormalizada, writeMovimientosMp } from "./_componentes_proceso";
 import type {
   CalcContext,
   CalcWriter,
@@ -235,10 +235,19 @@ export async function runRecetaProcess(
     rol_dependencias: rolDeps,
   });
 
+  // ─── Capa de agregación: movimientos de MP (uno por componente) ──────────
+  const produccion = produccionNormalizada(ctx, proceso.id, periodo);
+  await writeMovimientosMp(
+    { ctx, proceso, periodo, writer },
+    produccion,
+    componentes.map(c => ({ codigo: c.material_codigo, nombre: c.material_nombre, pct: c.pct, precio: c.precio })),
+  );
+
   // ─── Componentes no-MP: energía + costos fijos ───────────────────────────
   const aux = await logComponentesAuxiliares(
     { ctx, proceso, periodo, writer },
-    { conEnergia: opts.conEnergia, energiaKey: opts.energiaKey, conCostosFijos: false },
+    { conEnergia: opts.conEnergia, energiaKey: opts.energiaKey, conCostosFijos: false,
+      movimientos: { produccion } },
   );
   const costo_energia  = aux.costo_energia;
   const energiaCalcId  = aux.energiaCalcId;
@@ -298,6 +307,16 @@ export async function runRecetaProcess(
       });
       extraCalcIds.push(costoExtraId);
       extraRolDeps[costoExtraId] = `costo_${ex.material_codigo.toLowerCase()}`;
+
+      // Capa de agregación: movimiento del componente térmico (combustible).
+      await writer.writeMovimiento({
+        proceso_id: proceso.id, periodo, tipo: "mp",
+        codigo: ex.material_codigo, nombre: ex.label,
+        produccion_ton: produccion,
+        cantidad:       consumoRes.valor * produccion,
+        costo_unitario: precioUnit,
+        valor:          costoExtra * produccion,
+      }, ctx.versionId, ctx.runId);
     }
     costo_combustible = sumaExtra;
   } else if (opts.conCombustible) {
@@ -312,6 +331,7 @@ export async function runRecetaProcess(
         {
           conEnergia: false, conCostosFijos: true,
           clasificar: opts.clasificar, registrarPlaceholders: opts.registrarPlaceholders,
+          movimientos: { produccion },
         },
       )
     : null;

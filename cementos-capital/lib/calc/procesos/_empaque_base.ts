@@ -9,7 +9,7 @@
 // which typically omits packaging rows.
 
 import { fn as calcMpReceta } from "@/lib/calc/formulas/costo_mp_receta";
-import { logComponentesAuxiliares } from "./_componentes_proceso";
+import { logComponentesAuxiliares, produccionNormalizada, writeMovimientosMp } from "./_componentes_proceso";
 import type {
   CalcContext,
   CalcWriter,
@@ -158,6 +158,14 @@ export async function runEmpaqueProcess(
     rol_dependencias: rolDeps,
   });
 
+  // ─── Capa de agregación: movimientos de MP (granel + saco + servicio) ─────
+  const produccion = produccionNormalizada(ctx, proceso.id, periodo);
+  await writeMovimientosMp(
+    { ctx, proceso, periodo, writer },
+    produccion,
+    componentes.map(c => ({ codigo: c.codigo, nombre: c.nombre, pct: c.pct, precio: c.precio })),
+  );
+
   // ─── 5. Energía eléctrica (Fase 3) ────────────────────────────────────────
   // Cuarto componente del empaque (tercero del granel). Vía el helper común;
   // si no hay datos de energía para el proceso, no contribuye (costo_energia=null).
@@ -167,7 +175,8 @@ export async function runEmpaqueProcess(
   if (opts.conEnergia) {
     const aux = await logComponentesAuxiliares(
       { ctx, proceso, periodo, writer },
-      { conEnergia: true, energiaKey: opts.energiaKey, conCostosFijos: false },
+      { conEnergia: true, energiaKey: opts.energiaKey, conCostosFijos: false,
+        movimientos: { produccion } },
     );
     if (aux.costo_energia != null && aux.energiaCalcId != null) {
       costo_energia = aux.costo_energia;
