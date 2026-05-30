@@ -36,7 +36,9 @@ CREATE INDEX IF NOT EXISTS plan_movimientos_version_proceso_periodo
 -- RLS: misma política que costo_proceso (acceso solo a usuarios autenticados)
 ALTER TABLE plan_movimientos ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "plan_movimientos_auth"
+-- Postgres no soporta CREATE POLICY IF NOT EXISTS — usar DROP + CREATE (idempotente).
+DROP POLICY IF EXISTS "plan_movimientos_auth" ON plan_movimientos;
+CREATE POLICY "plan_movimientos_auth"
   ON plan_movimientos
   FOR ALL
   TO authenticated
