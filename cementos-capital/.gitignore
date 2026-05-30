@@ -48,6 +48,10 @@ supabase/.temp/
 /.test-*.ts
 /.seed-*.ts
 
+# ephemeral diagnostic/temp scripts (prefixed with _tmp or tmp_)
+scripts/_*_tmp.*
+scripts/*_tmp.*
+
 # playwright
 /test-results/
 /playwright-report/
