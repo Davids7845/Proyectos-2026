@@ -3,7 +3,7 @@
 // Cadena de cálculo (un periodo):
 //   1) precio_caliza_martillo   = COSTO_CALIZA_MARTILLO_v1(precio_caliza, costo_martillo, pct_caliza, pct_martillo)
 //   2) costo_mp_prehomo         = COSTO_PREHOMO_v1(precio_caliza_martillo, precio_arcilla, pct_caliza_prehomo, pct_arcilla_prehomo)
-//   3) costo_total              = costo_mp_prehomo + costos fijos (sin energía: ver nota abajo)
+//   3) costo_total              = costo_mp_prehomo + energía + costos fijos
 //   4) costo_por_ton            = costo_total / 1 ton (la MP ya viene en COP/Ton)
 //
 // Materiales claves (por código en `materiales`):
@@ -172,18 +172,13 @@ export class Ord01Trituracion implements ProcesoCalculator {
       rol_dependencias: { [f1Id]: "precio_caliza_martillo" },
     });
 
-    // ─── 4) Costos fijos: Barras y Placas, Material Dique, Desmantelamiento, Regalías ─
-    // Nota: el costo unitario de Trituración en el Excel NO incluye un bloque de
-    // energía eléctrica (el target reconciliado es MP + fijos = 13.902,78 COP/Ton).
-    // Por eso conEnergia=false aunque el importer lea la fila de energía: esa
-    // energía no forma parte del costo unitario de este proceso en el modelo.
-    // Fase 3: clasificamos (repuestos vs servicios/regalías) y registramos
-    // placeholders (componentes en 0) para que la vista muestre todos.
+    // ─── 4) Energía + Costos fijos ────────────────────────────────────
     const aux = await logComponentesAuxiliares(
       { ctx, proceso, periodo, writer },
-      { conEnergia: false, conCostosFijos: true, clasificar: true, registrarPlaceholders: true },
+      { conEnergia: true, energiaKey: "trituracion", conCostosFijos: true, clasificar: true, registrarPlaceholders: true },
     );
-    const fijosTotal      = aux.costo_servicios;             // suma de todos los fijos (total sin cambio)
+    const costo_energia   = aux.costo_energia;
+    const fijosTotal      = aux.costo_servicios;
     const costo_repuestos = aux.costo_repuestos;
     const restoServicios  = (fijosTotal ?? 0) - (costo_repuestos ?? 0);
     const costo_servicios = restoServicios > 0 ? restoServicios : null;
@@ -191,11 +186,12 @@ export class Ord01Trituracion implements ProcesoCalculator {
     const fijosRolDeps    = aux.fijosRolDeps;
 
     // ─── 5) Costo total proceso ────────────────────────────────────────
-    const costo_total = f2.valor + (fijosTotal ?? 0);
+    const costo_total = f2.valor + (fijosTotal ?? 0) + (costo_energia ?? 0);
     const costo_por_ton = costo_total;
 
     const dependeDeTotal: UUID[] = [f2Id];
     const rolDepsTotal: Record<string, string> = { [f2Id]: "costo_mp" };
+    if (aux.energiaCalcId) { dependeDeTotal.push(aux.energiaCalcId); rolDepsTotal[aux.energiaCalcId] = "costo_energia"; }
     for (const fid of fijosCalcIds) { dependeDeTotal.push(fid); rolDepsTotal[fid] = fijosRolDeps[fid]; }
 
     const totalId = await writer.log({
@@ -208,9 +204,10 @@ export class Ord01Trituracion implements ProcesoCalculator {
       formula_codigo: "COSTO_PROCESO_SUMA_v1",
       formula_expresion:
         `costo_mp=${f2.valor}` +
-        (fijosTotal != null ? ` + fijos=${fijosTotal}` : "") +
+        (costo_energia != null ? ` + costo_energia=${costo_energia}` : "") +
+        (fijosTotal    != null ? ` + fijos=${fijosTotal}` : "") +
         ` → total=${costo_total}`,
-      parametros_entrada: { costo_mp: f2.valor, costo_fijos: fijosTotal, costo_repuestos, costo_servicios },
+      parametros_entrada: { costo_mp: f2.valor, costo_energia, costo_fijos: fijosTotal, costo_repuestos, costo_servicios },
       nivel_jerarquia: 0,
       depende_de: dependeDeTotal,
       rol_dependencias: rolDepsTotal,
@@ -221,7 +218,7 @@ export class Ord01Trituracion implements ProcesoCalculator {
       periodo,
       costo_materia_prima: f2.valor,
       costo_combustible:   null,
-      costo_energia:       null,
+      costo_energia,
       costo_repuestos,
       costo_servicios,
       costo_total,
