@@ -104,6 +104,7 @@ export default async function VersionOverviewPage({
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <Link href={`/versiones/${id}/dashboard`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Dashboard</Link>
           <Link href={`/versiones/${id}/costo`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo</Link>
+          <Link href={`/versiones/${id}/ponderado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Ponderado</Link>
           <Link href={`/versiones/${id}/graficas`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Gráficas</Link>
           <Link href={`/versiones/${id}/arrastrado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">Costo arrastrado</Link>
           <Link href={`/versiones/${id}/costo-arrastrado`} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">CA Detalle</Link>
