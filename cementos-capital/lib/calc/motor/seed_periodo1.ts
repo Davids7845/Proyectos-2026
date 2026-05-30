@@ -179,11 +179,11 @@ export const SEED_PERIODO1: DatosProceso[] = [
   empaque(14, 6, 20.4, 128_272.82, TOTAL_ORD6),
 
   // ── ORD 17 — Granel UG — cascada ORD 6 — TOTAL 104.952,29 ─────────────────
-  granel(17,  6, 104_952.29),
+  granel(17,  6),
   // ── ORD 18 — Granel ART — cascada ORD 7 — TOTAL 147.868,39 ────────────────
-  granel(18,  7, 147_868.39),
+  granel(18,  7),
   // ── ORD 22 — Fibro Granel — cascada ORD 16 — TOTAL 155.839,75 ─────────────
-  granel(22, 16, 155_839.75),
+  granel(22, 16),
 ];
 
 // Empaque: Cemento(cascada 1.0) + Sacos + Energía.
@@ -207,7 +207,9 @@ function empaque(
 }
 
 // Granel: Cemento(cascada 1.0) + Energía + Cargue.
-function granel(ord: number, ordCemento: number, _total: number): DatosProceso {
+// (El TOTAL documentado se pasa sólo como anotación en la llamada; el costo lo
+// computa el motor a partir de la cascada + energía + cargue, sin back-calc.)
+function granel(ord: number, ordCemento: number): DatosProceso {
   return {
     ord,
     produccion: 1,
