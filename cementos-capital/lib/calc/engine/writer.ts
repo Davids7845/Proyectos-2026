@@ -3,6 +3,7 @@ import type {
   CalcLogEntry,
   CalcWriter,
   Client,
+  MovimientoEntry,
   ProcesoResult,
   UUID,
 } from "./context";
@@ -14,6 +15,7 @@ import type {
 export class InMemoryWriter implements CalcWriter {
   logs: Array<CalcLogEntry & { id: UUID }> = [];
   costoProcesos: Array<ProcesoResult & { version_id: UUID; run_id: UUID }> = [];
+  movimientos: Array<MovimientoEntry & { version_id: UUID; run_id: UUID }> = [];
   deps: Array<{ calculo_id: UUID; depende_de_id: UUID; rol_parametro: string | null }> = [];
   private seq = 0;
 
@@ -34,6 +36,10 @@ export class InMemoryWriter implements CalcWriter {
 
   async writeCostoProceso(r: ProcesoResult, versionId: UUID, runId: UUID): Promise<void> {
     this.costoProcesos.push({ ...r, version_id: versionId, run_id: runId });
+  }
+
+  async writeMovimiento(entry: MovimientoEntry, versionId: UUID, runId: UUID): Promise<void> {
+    this.movimientos.push({ ...entry, version_id: versionId, run_id: runId });
   }
 }
 
@@ -111,5 +117,24 @@ export class SupabaseWriter implements CalcWriter {
       calc_total_id: r.calc_total_id,
     });
     if (error) throw new Error(`costo_proceso insert: ${error.message}`);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async writeMovimiento(entry: MovimientoEntry, versionId: UUID, runId: UUID): Promise<void> {
+    const sb = this.supabase as any;
+    const { error } = await sb.from("plan_movimientos").insert({
+      version_id:     versionId,
+      run_id:         runId,
+      proceso_id:     entry.proceso_id,
+      periodo:        entry.periodo,
+      tipo:           entry.tipo,
+      codigo:         entry.codigo,
+      nombre:         entry.nombre,
+      produccion_ton: entry.produccion_ton,
+      cantidad:       entry.cantidad,
+      costo_unitario: entry.costo_unitario,
+      valor:          entry.valor,
+    });
+    if (error) throw new Error(`plan_movimientos insert: ${error.message}`);
   }
 }

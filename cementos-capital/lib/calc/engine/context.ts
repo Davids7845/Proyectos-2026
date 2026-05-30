@@ -185,10 +185,25 @@ export interface ProcesoCalculator {
   }): Promise<ProcesoResult>;
 }
 
+// Un movimiento por componente × periodo para cálculo de promedio ponderado.
+export interface MovimientoEntry {
+  proceso_id:     UUID;
+  periodo:        Periodo;
+  tipo:           'mp' | 'energia' | 'fijo';
+  codigo:         string;
+  nombre:         string;
+  produccion_ton: number;  // producción real o normalizada (1 por defecto)
+  cantidad:       number;  // produccion_ton × receta% × (1+humedad) / × kwh_ton / × 1
+  costo_unitario: number;  // COP por unidad de este insumo
+  valor:          number;  // costo_unitario × cantidad
+}
+
 // Writer abstrae la persistencia (permite testear con mock)
 export interface CalcWriter {
   /** Escribe una entrada en calculation_log; retorna el id generado. */
   log(entry: CalcLogEntry): Promise<UUID>;
   /** Escribe el resumen costo_proceso. */
   writeCostoProceso(r: ProcesoResult, versionId: UUID, runId: UUID): Promise<void>;
+  /** Escribe un movimiento en plan_movimientos para promedio ponderado. */
+  writeMovimiento(entry: MovimientoEntry, versionId: UUID, runId: UUID): Promise<void>;
 }

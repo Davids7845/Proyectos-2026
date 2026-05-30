@@ -126,6 +126,15 @@ export async function runCalculation(
       const { error } = await supabase.from("calculation_log").delete().eq("version_id", opts.versionId);
       if (error) throw new Error(`calculation_log delete: ${error.message}`);
     }
+    // 3) plan_movimientos: movimientos por componente (migración 028).
+    //    Ignorar error si la tabla aún no existe (entornos sin migración).
+    {
+      const sb = supabase as any;
+      const { error } = await sb.from("plan_movimientos").delete().eq("version_id", opts.versionId);
+      if (error && !String(error.message).includes("does not exist")) {
+        throw new Error(`plan_movimientos delete: ${error.message}`);
+      }
+    }
 
     // ─── Sembrar formula_definitions (upsert) ─────────────────────
     const formulaIdByCodigo = await ensureFormulas(supabase);

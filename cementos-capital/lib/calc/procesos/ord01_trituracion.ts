@@ -213,6 +213,85 @@ export class Ord01Trituracion implements ProcesoCalculator {
       rol_dependencias: rolDepsTotal,
     });
 
+    // ─── 6) Movimientos por componente (promedio ponderado) ─────────────────
+    // produccion normalizada a 1 ton cuando no hay rendimientos en la BD.
+    const produccion = ctx.rendimientosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`)?.produccion_ton ?? 1;
+
+    // MP: caliza+martillo (usando precio compuesto f1.valor)
+    await writer.writeMovimiento({
+      proceso_id: proceso.id,
+      periodo,
+      tipo: 'mp',
+      codigo: CODIGO_CALIZA,
+      nombre: matCaliza.nombre,
+      produccion_ton: produccion,
+      cantidad:       lnCaliza.porcentaje * produccion,
+      costo_unitario: f1.valor,
+      valor:          f1.valor * lnCaliza.porcentaje * produccion,
+    }, ctx.versionId, ctx.runId);
+
+    // MP: arcilla
+    await writer.writeMovimiento({
+      proceso_id: proceso.id,
+      periodo,
+      tipo: 'mp',
+      codigo: CODIGO_ARCILLA,
+      nombre: matArcilla.nombre,
+      produccion_ton: produccion,
+      cantidad:       lnArcilla.porcentaje * produccion,
+      costo_unitario: precioArcilla.precio,
+      valor:          precioArcilla.precio * lnArcilla.porcentaje * produccion,
+    }, ctx.versionId, ctx.runId);
+
+    // Energía eléctrica
+    if (costo_energia != null) {
+      const enOver = ctx.energiaOverrideByKey?.get(`${proceso.id}|${periodo}`);
+      let kwh_ton = 0;
+      let precio_kwh = 0;
+      if (enOver) {
+        kwh_ton = enOver.kwh_ton;
+        precio_kwh = enOver.precio_efectivo;
+      } else {
+        const paramsEner = ctx.parametrosEnergiaByPeriodo?.get(periodo);
+        if (paramsEner) {
+          const kwhMap = paramsEner.kwh_ton_proceso ?? {};
+          for (const cand of ['trituracion', proceso.material?.toLowerCase(), proceso.nombre?.toLowerCase()].filter((x): x is string => typeof x === 'string')) {
+            if (kwhMap[cand] != null) { kwh_ton = kwhMap[cand]; break; }
+          }
+          precio_kwh = kwh_ton > 0 ? costo_energia / kwh_ton : 0;
+        }
+      }
+      if (kwh_ton > 0) {
+        await writer.writeMovimiento({
+          proceso_id: proceso.id,
+          periodo,
+          tipo: 'energia',
+          codigo: 'energia_trituracion',
+          nombre: 'Energía Eléctrica',
+          produccion_ton: produccion,
+          cantidad:       kwh_ton * produccion,
+          costo_unitario: precio_kwh,
+          valor:          costo_energia * produccion,
+        }, ctx.versionId, ctx.runId);
+      }
+    }
+
+    // Costos fijos
+    const cfItems = ctx.costosFijosByProcesoPeriodo?.get(`${proceso.id}|${periodo}`) ?? [];
+    for (const cf of cfItems) {
+      await writer.writeMovimiento({
+        proceso_id: proceso.id,
+        periodo,
+        tipo: 'fijo',
+        codigo: cf.codigo,
+        nombre: cf.nombre,
+        produccion_ton: produccion,
+        cantidad:       produccion,
+        costo_unitario: cf.costo_por_ton,
+        valor:          cf.costo_por_ton * produccion,
+      }, ctx.versionId, ctx.runId);
+    }
+
     return {
       proceso_id: proceso.id,
       periodo,
