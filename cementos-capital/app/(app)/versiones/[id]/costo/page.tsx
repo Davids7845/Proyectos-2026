@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Calculator, RefreshCw } from "lucide-react";
 import ExportButton from "@/components/ExportButton";
+import RecalcularMotorButton from "@/components/RecalcularMotorButton";
 import { formatCOP, formatMes, BRAND } from "@/lib/ui/colors";
+import { periodoIndexToFecha } from "@/lib/calc/motor/periodos";
 
 interface CostoCell {
   costo_por_ton: number;
@@ -13,18 +15,34 @@ interface CostoCell {
 
 export default async function CostoPivotPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ motor?: string }>;
 }) {
   const { id } = await params;
+  const { motor } = await searchParams;
+  const modoMotorNuevo = motor === "nuevo";
   const supabase = await createClient();
 
   const { data: version } = await supabase
     .from("budget_versions")
-    .select("id, nombre, estado")
+    .select("id, nombre, estado, fecha_inicio, fecha_fin")
     .eq("id", id)
     .single();
   if (!version) notFound();
+
+  // ── Modo motor NUEVO (R6a): lee de costo_calculado en lugar de costo_proceso ──
+  if (modoMotorNuevo) {
+    return (
+      <CostoMatrizMotorNuevo
+        id={id}
+        versionNombre={version.nombre}
+        fechaInicio={version.fecha_inicio}
+        supabase={supabase}
+      />
+    );
+  }
 
   // Último run para esta versión
   const { data: lastRun } = await supabase
@@ -373,7 +391,15 @@ export default async function CostoPivotPage({
 
 // ── Componentes ───────────────────────────────────────────────────────
 
-function PageHeader({ versionId, versionNombre }: { versionId: string; versionNombre: string }) {
+function PageHeader({
+  versionId,
+  versionNombre,
+  modo = "viejo",
+}: {
+  versionId: string;
+  versionNombre: string;
+  modo?: "viejo" | "nuevo";
+}) {
   return (
     <div>
       <nav className="text-xs text-slate-500 mb-3 flex items-center gap-1">
@@ -388,22 +414,55 @@ function PageHeader({ versionId, versionNombre }: { versionId: string; versionNo
           <h1 className="text-2xl font-bold text-slate-900">Costo por proceso</h1>
           <p className="text-sm text-slate-500 mt-1">Matriz costo unitario (COP/Ton) por proceso y período</p>
         </div>
-        <div className="flex gap-2 mt-1">
-          <Link
-            href={`/versiones/${versionId}/datos/precios`}
-            className="inline-flex items-center gap-1.5 text-sm text-slate-600 border border-slate-300 hover:bg-slate-50 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            Datos
-          </Link>
-          <ExportButton versionId={versionId} />
-          <Link
-            href={`/versiones/${versionId}/calcular`}
-            className="inline-flex items-center gap-1.5 text-sm text-white rounded-lg px-3 py-1.5 transition-colors"
-            style={{ backgroundColor: BRAND.success }}
-          >
-            <RefreshCw size={14} />
-            Recalcular
-          </Link>
+        <div className="flex flex-col items-end gap-2 mt-1">
+          <div className="flex gap-2">
+            <Link
+              href={`/versiones/${versionId}/datos/precios`}
+              className="inline-flex items-center gap-1.5 text-sm text-slate-600 border border-slate-300 hover:bg-slate-50 rounded-lg px-3 py-1.5 transition-colors"
+            >
+              Datos
+            </Link>
+            <ExportButton versionId={versionId} />
+            <Link
+              href={`/versiones/${versionId}/calcular`}
+              className="inline-flex items-center gap-1.5 text-sm text-white rounded-lg px-3 py-1.5 transition-colors"
+              style={{ backgroundColor: BRAND.success }}
+            >
+              <RefreshCw size={14} />
+              Recalcular
+            </Link>
+          </div>
+          {/* ── Toggle motor viejo/nuevo (temporal R6a) ── */}
+          <div className="flex items-center gap-2">
+            <RecalcularMotorButton versionId={versionId} />
+            <div className="inline-flex rounded-lg border overflow-hidden text-xs" style={{ borderColor: BRAND.border }}>
+              <Link
+                href={`/versiones/${versionId}/costo`}
+                className="px-3 py-1.5 font-medium transition-colors"
+                style={modo === "viejo"
+                  ? { backgroundColor: BRAND.primary, color: "white" }
+                  : { color: BRAND.inkSecondary }}
+              >
+                Motor viejo
+              </Link>
+              <Link
+                href={`/versiones/${versionId}/costo?motor=nuevo`}
+                className="px-3 py-1.5 font-medium transition-colors border-l"
+                style={modo === "nuevo"
+                  ? { backgroundColor: BRAND.primary, color: "white", borderColor: BRAND.border }
+                  : { color: BRAND.inkSecondary, borderColor: BRAND.border }}
+              >
+                Motor nuevo
+              </Link>
+            </div>
+            <Link
+              href={`/versiones/${versionId}/comparar-motores`}
+              className="text-xs underline"
+              style={{ color: BRAND.primary }}
+            >
+              Comparar
+            </Link>
+          </div>
         </div>
       </header>
     </div>
@@ -475,6 +534,143 @@ function EmptyState({ id, mensaje }: { id: string; mensaje: string }) {
         <RefreshCw size={14} />
         Ejecutar cálculo →
       </Link>
+    </div>
+  );
+}
+
+// ── Matriz desde el MOTOR NUEVO (R6a) — lee de costo_calculado ───────────────
+async function CostoMatrizMotorNuevo({
+  id,
+  versionNombre,
+  fechaInicio,
+  supabase,
+}: {
+  id: string;
+  versionNombre: string;
+  fechaInicio: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any;
+}) {
+  // Totales por proceso × período del motor nuevo
+  const { data: totales } = await supabase
+    .from("costo_calculado")
+    .select("ord, periodo, aporte_por_ton")
+    .eq("version_id", id)
+    .eq("es_total", true)
+    .order("ord");
+
+  const rows = (totales ?? []) as Array<{ ord: number; periodo: number; aporte_por_ton: number }>;
+
+  if (rows.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader versionId={id} versionNombre={versionNombre} modo="nuevo" />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">
+          <p className="text-sm text-amber-900">
+            El motor nuevo todavía no tiene cálculos persistidos para esta versión.
+          </p>
+          <p className="text-xs text-amber-700 mt-2">
+            Pulsa <strong>“Recalcular motor nuevo”</strong> arriba para poblar <code>costo_calculado</code>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Nombres de proceso por ord
+  const ordsSet = Array.from(new Set(rows.map(r => r.ord)));
+  const { data: procRows } = await supabase
+    .from("procesos")
+    .select("ord, nombre, orden_topologico")
+    .in("ord", ordsSet);
+  const nombrePorOrd = new Map<number, { nombre: string; orden: number }>();
+  for (const p of (procRows ?? []) as Array<{ ord: number; nombre: string; orden_topologico: number | null }>) {
+    nombrePorOrd.set(p.ord, { nombre: p.nombre, orden: p.orden_topologico ?? p.ord });
+  }
+
+  // Pivote ord → periodo → aporte
+  const periodosSet = new Set<number>();
+  const porOrd = new Map<number, Map<number, number>>();
+  for (const r of rows) {
+    periodosSet.add(r.periodo);
+    if (!porOrd.has(r.ord)) porOrd.set(r.ord, new Map());
+    porOrd.get(r.ord)!.set(r.periodo, Number(r.aporte_por_ton));
+  }
+  const periodos = Array.from(periodosSet).sort((a, b) => a - b);
+  const filas = Array.from(porOrd.keys())
+    .map(ord => ({
+      ord,
+      nombre: nombrePorOrd.get(ord)?.nombre ?? `ORD ${ord}`,
+      orden: nombrePorOrd.get(ord)?.orden ?? ord,
+      byPeriodo: porOrd.get(ord)!,
+    }))
+    .sort((a, b) => a.orden - b.orden);
+
+  const fechaDe = (per: number) => (fechaInicio ? periodoIndexToFecha(fechaInicio, per) : `P${per}`);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader versionId={id} versionNombre={versionNombre} modo="nuevo" />
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-900">
+        Mostrando <strong>motor de fórmulas nuevo</strong> (tabla <code>costo_calculado</code>).
+        Vista temporal de verificación R6a — las calculadoras viejas siguen intactas.
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h2 className="text-base font-semibold text-slate-900">Matriz costo/Ton — motor nuevo</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {filas.length} procesos · {periodos.length} periodos · click en proceso → desglose del motor nuevo
+          </p>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ backgroundColor: BRAND.bgBand }} className="border-b border-slate-200 sticky top-0">
+                <th className="px-4 py-3 text-left font-semibold text-slate-700 sticky left-0 z-10 min-w-[16rem]"
+                    style={{ backgroundColor: BRAND.bgBand }}>
+                  Proceso
+                </th>
+                {periodos.map(per => (
+                  <th key={per} className="px-3 py-3 text-right font-semibold text-slate-700 tabular-nums whitespace-nowrap">
+                    {fechaInicio ? formatMes(fechaDe(per)) : `P${per}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f, idx) => (
+                <tr
+                  key={f.ord}
+                  className="border-b border-slate-100 transition-colors hover:bg-blue-50/40"
+                  style={{ backgroundColor: idx % 2 === 1 ? BRAND.bgBand : BRAND.bgCard }}
+                >
+                  <td className="px-4 py-2.5 text-slate-900 sticky left-0 z-10"
+                      style={{ backgroundColor: idx % 2 === 1 ? BRAND.bgBand : BRAND.bgCard }}>
+                    <span className="text-xs text-slate-400 mr-2 tabular-nums">{String(f.ord).padStart(2, "0")}</span>
+                    <Link
+                      href={`/versiones/${id}/costo/proceso/${f.ord}?motor=nuevo`}
+                      className="hover:underline font-medium"
+                      style={{ color: BRAND.primary }}
+                    >
+                      {f.nombre}
+                    </Link>
+                  </td>
+                  {periodos.map(per => {
+                    const v = f.byPeriodo.get(per);
+                    return (
+                      <td key={per} className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-slate-700">
+                        {v != null ? formatCOP(v) : <span className="text-slate-300">—</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

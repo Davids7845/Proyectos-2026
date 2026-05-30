@@ -104,6 +104,8 @@ export async function calcularCostoProceso(
     version_id: versionId, ord, periodo,
     tipo: d.tipo, orden_visual: i,
     consumo_unitario: d.consumo_unitario,
+    // precio unitario implícito = aporte / consumo (COP por unidad de consumo).
+    costo_unitario: d.consumo_unitario !== 0 ? d.aporte_por_ton / d.consumo_unitario : null,
     aporte_por_ton: d.aporte_por_ton,
     es_total: false, es_cascada: d.es_cascada,
   }));
@@ -111,6 +113,7 @@ export async function calcularCostoProceso(
     version_id: versionId, ord, periodo,
     tipo: "TOTAL", orden_visual: 999,
     consumo_unitario: 0,
+    costo_unitario: null,
     aporte_por_ton: resultado.total,
     es_total: true, es_cascada: false,
   });

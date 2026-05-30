@@ -57,14 +57,16 @@ export function calcularPeriodo(
 }
 
 // Versión async para Supabase: procesa el período completo en orden topológico.
+// Devuelve la lista de procesos calculados (ord + total) para reporte.
 export async function calcularPeriodoDB(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   versionId: string,
   periodo: number,
-): Promise<void> {
+): Promise<Array<{ ord: number; total: number }>> {
   const { generarMovimientosProceso } = await import("./generar_movimientos");
   const { calcularCostoProceso } = await import("./calcular_costo");
+  const calculados: Array<{ ord: number; total: number }> = [];
   for (const ord of ORDEN_TOPOLOGICO) {
     const { data: prod } = await supabase
       .from("produccion_proceso")
@@ -73,6 +75,8 @@ export async function calcularPeriodoDB(
       .maybeSingle();
     if (!prod) continue; // proceso sin datos este período → omitir
     await generarMovimientosProceso(supabase, versionId, ord, periodo);
-    await calcularCostoProceso(supabase, versionId, ord, periodo);
+    const total = await calcularCostoProceso(supabase, versionId, ord, periodo);
+    calculados.push({ ord, total });
   }
+  return calculados;
 }

@@ -7,10 +7,11 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import DonutChart from "@/components/charts/DonutChart";
 import { BRAND, formatCOP, formatMes } from "@/lib/ui/colors";
+import { periodoIndexToFecha } from "@/lib/calc/motor/periodos";
 
 interface PageProps {
   params: Promise<{ id: string; ord: string }>;
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; motor?: string }>;
 }
 
 interface ComponenteRow {
@@ -54,6 +55,21 @@ export default async function ProcesoDetallePage({ params, searchParams }: PageP
     supabase.from("procesos").select("id, ord, nombre").eq("ord", ordNum).maybeSingle(),
   ]);
   if (!version || !proceso) notFound();
+
+  // ── Modo motor NUEVO (R6a): lee componentes de costo_calculado ──
+  if (sp.motor === "nuevo") {
+    return (
+      <ProcesoDetalleMotorNuevo
+        id={id}
+        ordNum={ordNum}
+        nombre={proceso.nombre}
+        versionNombre={version.nombre}
+        fechaInicio={version.fecha_inicio}
+        periodoParam={sp.periodo}
+        supabase={supabase}
+      />
+    );
+  }
 
   const { data: lastRun } = await supabase
     .from("calculation_runs")
@@ -529,6 +545,238 @@ function EmptyCard({ id, mensaje }: { id: string; mensaje: string }) {
       >
         Ir a calcular →
       </Link>
+    </div>
+  );
+}
+
+// ── Detalle del proceso desde el MOTOR NUEVO (R6a) — lee de costo_calculado ──
+async function ProcesoDetalleMotorNuevo({
+  id,
+  ordNum,
+  nombre,
+  versionNombre,
+  fechaInicio,
+  periodoParam,
+  supabase,
+}: {
+  id: string;
+  ordNum: number;
+  nombre: string;
+  versionNombre: string;
+  fechaInicio: string | null;
+  periodoParam?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any;
+}) {
+  // Períodos disponibles para este proceso en el motor nuevo
+  const { data: persRaw } = await supabase
+    .from("costo_calculado")
+    .select("periodo")
+    .eq("version_id", id)
+    .eq("ord", ordNum)
+    .eq("es_total", true)
+    .order("periodo");
+  const periodosDisp = Array.from(
+    new Set(((persRaw ?? []) as Array<{ periodo: number }>).map(r => r.periodo))
+  ).sort((a, b) => a - b);
+
+  const periodoSel = periodoParam != null && periodosDisp.includes(Number(periodoParam))
+    ? Number(periodoParam)
+    : periodosDisp[0] ?? 1;
+
+  // Componentes (desglose) + total para el período seleccionado
+  const { data: compsRaw } = await supabase
+    .from("costo_calculado")
+    .select("tipo, consumo_unitario, costo_unitario, aporte_por_ton, es_total, es_cascada, orden_visual")
+    .eq("version_id", id)
+    .eq("ord", ordNum)
+    .eq("periodo", periodoSel)
+    .order("orden_visual");
+
+  const allRows = (compsRaw ?? []) as Array<{
+    tipo: string; consumo_unitario: number | null; costo_unitario: number | null;
+    aporte_por_ton: number | null; es_total: boolean; es_cascada: boolean; orden_visual: number;
+  }>;
+  const totalRow = allRows.find(r => r.es_total);
+  const componentes = allRows.filter(r => !r.es_total);
+  const totalCostoTon = totalRow ? Number(totalRow.aporte_por_ton) : 0;
+
+  const donutData = componentes
+    .filter(c => Number(c.aporte_por_ton) > 0)
+    .map(c => ({ name: c.tipo, value: Number(c.aporte_por_ton) }));
+
+  const fechaDe = (per: number) => (fechaInicio ? periodoIndexToFecha(fechaInicio, per) : `P${per}`);
+
+  return (
+    <div className="space-y-6">
+      <nav className="text-xs flex items-center gap-1" style={{ color: BRAND.inkSecondary }}>
+        <Link href="/versiones" className="hover:underline">Versiones</Link>
+        <span>/</span>
+        <Link href={`/versiones/${id}`} className="hover:underline">{versionNombre}</Link>
+        <span>/</span>
+        <Link href={`/versiones/${id}/costo?motor=nuevo`} className="hover:underline flex items-center gap-1">
+          <ChevronLeft size={12} /> Costo (motor nuevo)
+        </Link>
+        <span>/</span>
+        <span style={{ color: BRAND.ink }} className="font-medium">Proceso {ordNum}</span>
+      </nav>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-900">
+        Mostrando <strong>motor de fórmulas nuevo</strong> (tabla <code>costo_calculado</code>). Vista temporal R6a.
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-6"
+           style={{ borderTop: `4px solid ${BRAND.primary}`, border: `1px solid ${BRAND.border}` }}>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>
+              Proceso N° {String(ordNum).padStart(2, "0")}
+            </p>
+            <h1 className="text-2xl font-bold mt-1" style={{ color: BRAND.ink }}>{nombre}</h1>
+          </div>
+          {periodosDisp.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1 max-w-md justify-end">
+              {periodosDisp.map(p => (
+                <Link
+                  key={p}
+                  href={`/versiones/${id}/costo/proceso/${ordNum}?motor=nuevo&periodo=${p}`}
+                  className="px-2.5 py-1 rounded text-xs font-medium border transition-colors"
+                  style={p === periodoSel
+                    ? { backgroundColor: BRAND.primary, color: "white", borderColor: BRAND.primary }
+                    : { borderColor: BRAND.border, color: BRAND.inkSecondary }}
+                >
+                  {fechaInicio ? formatMes(fechaDe(p)) : `P${p}`}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mt-6 pt-6 border-t" style={{ borderColor: BRAND.border }}>
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>Costo unitario</p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>
+              {formatCOP(totalCostoTon)}
+              <span className="text-sm font-normal ml-1" style={{ color: BRAND.inkMuted }}>/Ton</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>Componentes</p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>{componentes.length}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide font-medium" style={{ color: BRAND.inkMuted }}>Período</p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: BRAND.ink }}>
+              {fechaInicio ? formatMes(fechaDe(periodoSel)) : `P${periodoSel}`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {componentes.length === 0 ? (
+        <EmptyCard id={id} mensaje="El motor nuevo no tiene componentes para este proceso/período." />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white border rounded-xl shadow-sm overflow-hidden" style={{ borderColor: BRAND.border }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: BRAND.border }}>
+              <h2 className="text-base font-semibold" style={{ color: BRAND.ink }}>Desglose del costo — motor nuevo</h2>
+              <p className="text-xs mt-0.5" style={{ color: BRAND.inkMuted }}>
+                {fechaInicio ? formatMes(fechaDe(periodoSel)) : `P${periodoSel}`}
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ backgroundColor: BRAND.bgBand }}>
+                  <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Componente</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Consumo/Ton</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Precio Unit</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-xs uppercase tracking-wide" style={{ color: BRAND.inkSecondary }}>Aporte COP/Ton</th>
+                </tr>
+              </thead>
+              <tbody>
+                {componentes.map((c, i) => {
+                  const aporte = Number(c.aporte_por_ton);
+                  const esPlaceholder = aporte === 0;
+                  const pct = totalCostoTon > 0 ? (aporte / totalCostoTon) * 100 : 0;
+                  const color = esPlaceholder ? BRAND.border : BRAND.chart[i % BRAND.chart.length];
+                  const textColor = esPlaceholder ? BRAND.inkMuted : BRAND.ink;
+                  const numColor = esPlaceholder ? BRAND.inkMuted : BRAND.inkSecondary;
+                  return (
+                    <tr key={i} className="border-b" style={{ borderColor: BRAND.border, opacity: esPlaceholder ? 0.6 : 1 }}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span aria-hidden className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                          <span style={{ color: textColor }}>{c.tipo}</span>
+                          {c.es_cascada && (
+                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
+                                  style={{ backgroundColor: BRAND.primarySoft, color: BRAND.primaryDark }}>
+                              cascada
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap" style={{ color: numColor }}>
+                        {c.consumo_unitario != null ? Number(c.consumo_unitario).toLocaleString("es-CO", { maximumFractionDigits: 4 }) : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums" style={{ color: numColor }}>
+                        {c.costo_unitario != null ? formatCOP(Number(c.costo_unitario)) : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="font-semibold tabular-nums" style={{ color: textColor }}>
+                          {esPlaceholder ? "—" : formatCOP(aporte)}
+                        </div>
+                        {!esPlaceholder && (
+                          <>
+                            <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: BRAND.bgBand }}>
+                              <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
+                            </div>
+                            <div className="text-xs mt-0.5 tabular-nums" style={{ color: BRAND.inkMuted }}>{pct.toFixed(1)} %</div>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: BRAND.primarySoft, borderTop: `2px solid ${BRAND.primary}` }}>
+                  <td className="px-4 py-3 font-bold uppercase tracking-wide text-xs" colSpan={3} style={{ color: BRAND.ink }}>
+                    Total {nombre}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums font-bold text-base" style={{ color: BRAND.ink }}>
+                    {formatCOP(totalCostoTon)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="bg-white border rounded-xl shadow-sm p-6" style={{ borderColor: BRAND.border }}>
+            <h2 className="text-base font-semibold mb-1" style={{ color: BRAND.ink }}>Composición</h2>
+            <p className="text-xs mb-4" style={{ color: BRAND.inkMuted }}>% aporte por componente</p>
+            {donutData.length > 0 ? (
+              <>
+                <DonutChart data={donutData} height={240} unit="COP" />
+                <ul className="mt-4 space-y-1.5 text-xs">
+                  {donutData.map((d, i) => {
+                    const pct = totalCostoTon > 0 ? (d.value / totalCostoTon) * 100 : 0;
+                    return (
+                      <li key={i} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 truncate">
+                          <span aria-hidden className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND.chart[i % BRAND.chart.length] }} />
+                          <span className="truncate" style={{ color: BRAND.inkSecondary }}>{d.name}</span>
+                        </span>
+                        <span className="tabular-nums font-medium" style={{ color: BRAND.ink }}>{pct.toFixed(1)} %</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: BRAND.inkMuted }}>Sin datos de composición.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
