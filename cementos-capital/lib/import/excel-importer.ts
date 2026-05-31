@@ -25,7 +25,7 @@ import {
   ENERGIA_OVERRIDE_ROWS,
   CONSUMO_CASCADE_ROWS,
   COSTO_MATERIAL_ROWS,
-  COSTO_COL_PPTO,
+  COSTO_COL_REAL,
   COSTO_COL_CONSUMO,
   COSTO_COL_PRECIO,
 } from "./costo-sheet-config";
@@ -756,12 +756,15 @@ function parseCostoSheetCells(
   const energia_overrides: EnergiaOverrideParsed[] = [];
   const mp_overrides: MpOverrideParsed[] = [];
 
-  // Costos fijos (col P = costo_por_ton presupuesto): la tasa COP/Ton aplica a todos los periodos
+  // Costos fijos (col I = "Total" Real = costo_por_ton): la tasa COP/Ton aplica
+  // a todos los periodos. NOTA: se usa la columna I (Real), no la P (Presupuesto):
+  // la columna P contiene la versión presupuesto (p.ej. Barras=477 COP/Ton) que
+  // NO corresponde a los costos fijos efectivos del modelo (Barras=903 COP/Ton).
   const periodsForFijos = periodos.length > 0 ? periodos : [periodoPpto];
   for (const [ordStr, items] of Object.entries(COSTOS_FIJOS_CONFIG)) {
     const ord = Number(ordStr);
     for (const it of items) {
-      const v = toNum(getCostoCell(cs, COSTO_COL_PPTO, it.row));
+      const v = toNum(getCostoCell(cs, COSTO_COL_REAL, it.row));
       if (v != null) {
         for (const periodo of periodsForFijos) {
           costos_fijos.push({ ord, codigo: it.codigo, nombre: it.nombre, periodo, costo_por_ton: v, row_excel: it.row });
