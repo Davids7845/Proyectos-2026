@@ -74,9 +74,14 @@ export const COSTOS_FIJOS_CONFIG: Record<
 
 /** Filas de energía eléctrica (kWh/Ton y precio) por ORD → row absoluto.
  *  Columna N = kWh/Ton Presupuesto, Columna O = precio efectivo COP/kWh.
+ *
+ *  ORD 1 (Trituración) se omite deliberadamente: su energía se calcula
+ *  siempre desde parametros_energia (kwh_ton_proceso["trituracion"] × precio
+ *  contrato/restricciones), no desde un override del Excel Presupuesto.
+ *  Las cols N/O del bloque ORD1 contienen valores Presupuesto (1.2926 kWh/Ton
+ *  @ 485 COP/kWh) que difieren del modelo real y NO deben importarse.
  */
 export const ENERGIA_OVERRIDE_ROWS: Record<number, number> = {
-   1:   9,
    2:  19,
    3:  33,
    4:  44,
