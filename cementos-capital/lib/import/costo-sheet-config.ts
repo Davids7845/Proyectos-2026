@@ -27,10 +27,13 @@ export const COSTOS_FIJOS_CONFIG: Record<
     { row: 13, codigo: "REGALIAS",         nombre: "Regalías" },
   ],
   2: [
-    { row: 20, codigo: "BARRAS_PLAC_AD",  nombre: "Barras y Placas" },
-    { row: 21, codigo: "MAT_DIQUE_AD",    nombre: "Material Dique" },
-    { row: 22, codigo: "DESMANT_AD",      nombre: "Desmantelamiento" },
-    { row: 23, codigo: "REGALIAS_AD",     nombre: "Regalías" },
+    // Bloque ORD2 en hoja Costo (col F = etiqueta, col I = Real):
+    //   row 19 Barras y Placas (903.51) · row 20 Material Dique (369.16)
+    //   row 21 Desmantelamiento (0) · row 22 Regalías (118.59) · row 23 Energía
+    { row: 19, codigo: "BARRAS_PLAC_AD",  nombre: "Barras y Placas" },
+    { row: 20, codigo: "MAT_DIQUE_AD",    nombre: "Material Dique" },
+    { row: 21, codigo: "DESMANT_AD",      nombre: "Desmantelamiento" },
+    { row: 22, codigo: "REGALIAS_AD",     nombre: "Regalías" },
   ],
   3: [
     { row: 30, codigo: "CUERPOS_MOL_CR",   nombre: "Cuerpos Moledores (Crudo)" },
@@ -75,14 +78,14 @@ export const COSTOS_FIJOS_CONFIG: Record<
 /** Filas de energía eléctrica (kWh/Ton y precio) por ORD → row absoluto.
  *  Columna N = kWh/Ton Presupuesto, Columna O = precio efectivo COP/kWh.
  *
- *  ORD 1 (Trituración) se omite deliberadamente: su energía se calcula
- *  siempre desde parametros_energia (kwh_ton_proceso["trituracion"] × precio
- *  contrato/restricciones), no desde un override del Excel Presupuesto.
- *  Las cols N/O del bloque ORD1 contienen valores Presupuesto (1.2926 kWh/Ton
- *  @ 485 COP/kWh) que difieren del modelo real y NO deben importarse.
+ *  ORD 1 (Trituración) y ORD 2 (Adiciones) se omiten deliberadamente: su
+ *  energía se calcula siempre desde parametros_energia (kwh_ton_proceso ×
+ *  precio contrato/restricciones), no desde un override del Excel Presupuesto.
+ *  En ORD2 el row 19 mapeado aquí apuntaba en realidad a "Barras y Placas"
+ *  (N=1, O=477 COP) — no a energía — produciendo energía = 1×477 en vez de
+ *  1.27 × 521.36 = 662.13. Igual que en ORD1, debe venir de parametros_energia.
  */
 export const ENERGIA_OVERRIDE_ROWS: Record<number, number> = {
-   2:  19,
    3:  33,
    4:  44,
    5:  66,
