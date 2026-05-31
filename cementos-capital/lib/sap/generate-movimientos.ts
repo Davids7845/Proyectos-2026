@@ -62,6 +62,7 @@ const FIJO_CLASE_BY_CODIGO: Record<string, string> = {
 // Calculo tipos que representan componentes individuales (excluye agregados)
 const TIPOS_COMPONENTE = [
   "precio_componente_directo",
+  "precio_componente_blended",
   "precio_componente_derivado",
   "costo_energia_proceso",
   "costo_componente_derivado_termico",
@@ -194,6 +195,7 @@ export async function generateMovimientos(
     // ── A. Componentes de materia prima (precio_componente_*) ──────────────
     if (
       log.calculo_tipo === "precio_componente_directo" ||
+      log.calculo_tipo === "precio_componente_blended" ||
       log.calculo_tipo === "precio_componente_derivado"
     ) {
       if (!log.material_id) continue;

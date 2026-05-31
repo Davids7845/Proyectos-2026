@@ -39,7 +39,7 @@ describe("COSTO_MEZCLA_PONDERADA_v1", () => {
 });
 
 describe("ORD 2 — Adiciones", () => {
-  it("Calcula costo y produce 2 entradas en log con 1 dep", async () => {
+  it("Calcula costo y produce 3 entradas en log con 3 deps (precio_caliza_martillo + costo_mp + total)", async () => {
     const MAT_CAL_ID = "mat-calizatri";
     const PROC_ID = "proc-ord2";
     const periodo = "2026-01-01";
@@ -64,8 +64,11 @@ describe("ORD 2 — Adiciones", () => {
 
     expect(result.costo_total).toBe(25000);
     expect(result.costo_por_ton).toBe(25000);
-    expect(writer.logs).toHaveLength(2);
-    expect(writer.deps).toHaveLength(1);
+    // precio_caliza_martillo (fallback sin martillo) + costo_mp_adiciones + costo_proceso_total = 3
+    expect(writer.logs).toHaveLength(3);
+    // mp→precio_caliza_martillo (1) + total→[mp, precio_caliza_martillo] (2) = 3
+    expect(writer.deps).toHaveLength(3);
     expect(writer.logs.find(l => l.calculo_tipo === "costo_proceso_total")?.id).toBe(result.calc_total_id);
+    expect(writer.logs.find(l => l.calculo_tipo === "precio_caliza_martillo")).toBeDefined();
   });
 });

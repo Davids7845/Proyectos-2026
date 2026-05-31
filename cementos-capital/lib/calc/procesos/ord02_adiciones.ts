@@ -2,8 +2,13 @@
 //
 // Componentes: MP (Caliza Triturada) + Energía + Barras y Placas +
 //              Material Dique + Desmantelamiento + Regalías.
+//
+// El precio de la caliza se evalúa igual que ORD 1:
+//   precio_caliza_martillo = COSTO_CALIZA_MARTILLO_v1(caliza, martillo, pct_caliza, pct_martillo)
+// usando porcentajes_consumo del material CALTLVTRIT (proveedor "caliza" / "martillo").
 
 import { fn as calcMezcla }          from "@/lib/calc/formulas/costo_mezcla_ponderada";
+import { fn as calcCalizaMartillo }  from "@/lib/calc/formulas/costo_caliza_martillo";
 import { logComponentesAuxiliares, produccionNormalizada, writeMovimientosMp }  from "./_componentes_proceso";
 import type {
   CalcWriter,
@@ -15,7 +20,8 @@ import type {
   UUID,
 } from "@/lib/calc/engine/context";
 
-const CODIGOS_CALIZA_PRIORIDAD = ["CALIZATRI", "CALTLVTRIT"];
+const CODIGOS_CALIZA_PRIORIDAD  = ["CALIZATRI", "CALTLVTRIT"];
+const CODIGO_MARTILLO_PROVEEDOR = "martillo";
 
 export class Ord02Adiciones implements ProcesoCalculator {
   ord = 2;
@@ -62,26 +68,79 @@ export class Ord02Adiciones implements ProcesoCalculator {
       };
     }
 
-    // Busca el primer código de caliza con precio disponible. Esto cubre los
-    // dos escenarios del Excel: la "Caliza Triturada" estándar (CALIZATRI) y
-    // el alias "Caliza Explotada" que se importa como CALTLVTRIT cuando el
-    // Excel sólo trae el nombre canónico.
+    // Busca el material caliza (CALIZATRI o CALTLVTRIT).
     let mat: { id: string; nombre: string; codigo: string } | undefined;
-    let precio: { precio: number } | undefined;
     for (const codigo of CODIGOS_CALIZA_PRIORIDAD) {
-      const m = ctx.materialesByCodigo.get(codigo);
-      if (!m) continue;
-      const p = ctx.preciosByMatPeriodo.get(`${m.id}|${periodo}|`);
-      if (p) { mat = m; precio = p; break; }
+      mat = ctx.materialesByCodigo.get(codigo);
+      if (mat && ctx.preciosByMatPeriodo.has(`${mat.id}|${periodo}|`)) break;
     }
-    if (!mat || !precio) {
-      throw new Error(`ORD2 ${periodo}: falta precio de caliza (probó ${CODIGOS_CALIZA_PRIORIDAD.join(", ")})`);
+    if (!mat) {
+      throw new Error(`ORD2 ${periodo}: falta material caliza (probó ${CODIGOS_CALIZA_PRIORIDAD.join(", ")})`);
     }
 
-    // En esta v1 sólo hay un componente (100% caliza para adiciones).
-    // Aún así usamos la fórmula ponderada para mantener trazabilidad uniforme.
-    const items = [{ nombre: mat.nombre, precio: precio.precio, pct: 1.0 }];
-    const f = calcMezcla({ items_json: JSON.stringify(items) });
+    // ─── 1) Precio Caliza + Martillo (igual que ORD1) ──────────────────
+    // El precio real de la caliza incluye el costo del martillo ponderado por
+    // el % de consumo (fila 129-130 hoja Datos). Usar el precio plano daría
+    // 13,819 en vez del correcto 13,978 (= 13,819×0.95 + (13,819+3,178)×0.05).
+    const precioCaliza   = ctx.preciosByMatPeriodo.get(`${mat.id}|${periodo}|`);
+    const precioMartillo = ctx.preciosByMatPeriodo.get(`${mat.id}|${periodo}|${CODIGO_MARTILLO_PROVEEDOR}`);
+    const pctCaliza      = ctx.pctConsumoByKey.get(`${mat.id}|${periodo}|caliza`);
+    const pctMartillo    = ctx.pctConsumoByKey.get(`${mat.id}|${periodo}|martillo`);
+
+    if (!precioCaliza) {
+      throw new Error(`ORD2 ${periodo}: falta precio de caliza (${mat.codigo})`);
+    }
+
+    let precioMP: number;
+    let mpCalcId: string;
+
+    if (precioMartillo && pctCaliza && pctMartillo) {
+      const f1 = calcCalizaMartillo({
+        precio_caliza:  precioCaliza.precio,
+        costo_martillo: precioMartillo.precio,
+        pct_caliza:     pctCaliza.porcentaje,
+        pct_martillo:   pctMartillo.porcentaje,
+      });
+      precioMP = f1.valor;
+      mpCalcId = await writer.log({
+        calculo_tipo: "precio_caliza_martillo",
+        proceso_id: proceso.id,
+        material_id: mat.id,
+        periodo,
+        concepto: "Precio Caliza + Martillo ponderado (Adiciones)",
+        valor_resultado: f1.valor,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_CALIZA_MARTILLO_v1",
+        formula_expresion: f1.expresion_evaluada,
+        parametros_entrada: {
+          precio_caliza: precioCaliza.precio,
+          costo_martillo: precioMartillo.precio,
+          pct_caliza: pctCaliza.porcentaje,
+          pct_martillo: pctMartillo.porcentaje,
+        },
+        nivel_jerarquia: 2,
+      });
+    } else {
+      // Sin datos de martillo: usar precio plano (fallback compatible)
+      precioMP = precioCaliza.precio;
+      mpCalcId = await writer.log({
+        calculo_tipo: "precio_caliza_martillo",
+        proceso_id: proceso.id,
+        material_id: mat.id,
+        periodo,
+        concepto: "Precio Caliza (sin datos martillo, precio plano)",
+        valor_resultado: precioMP,
+        unidad: "COP/Ton",
+        formula_codigo: "COSTO_MEZCLA_PONDERADA_v1",
+        formula_expresion: `precio_plano=${precioMP}`,
+        parametros_entrada: { precio_plano: precioMP },
+        nivel_jerarquia: 2,
+      });
+    }
+
+    // ─── 2) Costo MP adiciones (100% caliza+martillo) ──────────────────
+    const mpItems = [{ nombre: mat.nombre, precio: precioMP, pct: 1.0 }];
+    const f = calcMezcla({ items_json: JSON.stringify(mpItems) });
 
     const mpId = await writer.log({
       calculo_tipo: "costo_mp_adiciones",
@@ -93,16 +152,18 @@ export class Ord02Adiciones implements ProcesoCalculator {
       unidad: "COP/Ton",
       formula_codigo: "COSTO_MEZCLA_PONDERADA_v1",
       formula_expresion: f.expresion_evaluada,
-      parametros_entrada: { items },
+      parametros_entrada: { items: mpItems },
       nivel_jerarquia: 1,
+      depende_de: [mpCalcId],
+      rol_dependencias: { [mpCalcId]: "precio_caliza_martillo" },
     });
 
-    // ─── Capa de agregación: movimiento de MP (100% caliza) ─────────────
+    // ─── Capa de agregación: movimiento de MP (100% caliza con precio evaluado) ──
     const produccion = produccionNormalizada(ctx, proceso.id, periodo);
     await writeMovimientosMp(
       { ctx, proceso, periodo, writer },
       produccion,
-      [{ codigo: mat.codigo, nombre: mat.nombre, pct: 1.0, precio: precio.precio }],
+      [{ codigo: mat.codigo, nombre: mat.nombre, pct: 1.0, precio: precioMP }],
     );
 
     // ─── Energía eléctrica + Costos fijos ───────────────────────────────
@@ -123,8 +184,8 @@ export class Ord02Adiciones implements ProcesoCalculator {
 
     // ─── Total ────────────────────────────────────────────────────────
     const costo_total = f.valor + (costo_energia ?? 0) + (fijosTotal ?? 0);
-    const dependeDe: UUID[] = [mpId];
-    const rolDepsTotal: Record<string, string> = { [mpId]: "costo_mp" };
+    const dependeDe: UUID[] = [mpId, mpCalcId];
+    const rolDepsTotal: Record<string, string> = { [mpId]: "costo_mp", [mpCalcId]: "precio_caliza_martillo" };
     if (energiaCalcId) { dependeDe.push(energiaCalcId); rolDepsTotal[energiaCalcId] = "costo_energia"; }
     for (const fid of fijosCalcIds) { dependeDe.push(fid); rolDepsTotal[fid] = fijosRolDeps[fid]; }
 

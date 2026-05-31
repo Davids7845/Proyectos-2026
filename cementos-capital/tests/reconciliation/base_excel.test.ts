@@ -229,7 +229,7 @@ describe("Reconciliación SAP vs Excel Base (período enero 2026)", () => {
 
     // 4. Build seed tables from CalcContext + writer logs
     const TIPOS_SAP = [
-      "precio_componente_directo", "precio_componente_derivado",
+      "precio_componente_directo", "precio_componente_blended", "precio_componente_derivado",
       "costo_energia_proceso", "costo_componente_derivado_termico", "costo_fijo_proceso",
     ];
 

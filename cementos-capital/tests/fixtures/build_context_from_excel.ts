@@ -178,6 +178,12 @@ const ALIASES: Record<string, string> = {
   "calamina sidoc":          "CALAMINA",
   "aditivo cemento":         "ADIT_MOL",
   "puzolana la dorada":      "PUZOLANA",
+  // proveedores de carbón bituminoso (nombres cortos del Excel → material en 018)
+  "sanoha":                           "CARB_SANOHA",
+  "forero hernandez":                 "CARB_FOREHE",
+  "tottal carbon":                    "CARB_TOTTAL",
+  "soluciones de carbon colombia":    "CARB_SOLUCI",
+  "minas las margaritas":             "CARB_LASMAR",
   // materiales adicionales con nombres del Excel (los que no necesitan alias porque coinciden con nombre normalizado)
   "mineral de hierro": "CORRHIERR",
   "calamina":          "CALAMINA",
@@ -242,11 +248,27 @@ function loadSeed(): SeedRegistry {
   }
 
   // Materiales adicionales que están en migration 003 y .seed-aliases.ts (RIC, SAL_MARINA, CHIP_MADERA, COMBALT)
+  // y providers de blends (migration 018) usados en PRECIO_BLEND_GROUPS de _receta_base.ts
   const extras: Array<[string, string, string]> = [
     ["COMBALT",     "Combustibles Alternos",                "T"],
     ["SAL_MARINA",  "Sal Marina",                           "T"],
     ["RIC",         "RIC (Residuo Industrial Cementero)",   "T"],
     ["CHIP_MADERA", "Chip de Madera",                       "T"],
+    // Providers CARBITUMI (migration 018)
+    ["CARB_SANOHA", "Carbón Sanoha",                        "T"],
+    ["CARB_FOREHE", "Carbón Forero Hernandez",              "T"],
+    ["CARB_TOTTAL", "Carbón Tottal",                        "T"],
+    ["CARB_SOLUCI", "Carbón Soluciones Colombia",           "T"],
+    ["CARB_LASMAR", "Carbón Minas Las Margaritas",          "T"],
+    // Providers CDR (migration 018)
+    ["CDR_FG_ANT",  "CDR Focus Green Antioquia",            "T"],
+    ["CDR_SV_CUN",  "CDR Sistema Verde Cundinamarca",       "T"],
+    ["CDR_SV_ANT",  "CDR Sistema Verde Antioquia",          "T"],
+    ["CDR_ECOLOG",  "CDR Ecologística",                     "T"],
+    ["CDR_ECOPOS",  "CDR Ecopositiva",                      "T"],
+    ["CDR_VEOLIA",  "CDR Veolia",                           "T"],
+    ["CDR_GDI_CAL", "CDR Gdi-Cali",                        "T"],
+    ["CDR_GDI_ZIP", "CDR Gdi-Zipaquirá",                   "T"],
   ];
   for (const [codigo, nombre, unidad_base] of extras) {
     const id = `mat-${codigo}`;
@@ -314,17 +336,9 @@ export function buildContextFromExcel(
   const FALLBACK_PRICES: Record<string, number> = {
     FINOS_FILT: 0,  // finos reincorporados — costo interno
   };
-  // Overrides: el blend efectivo del Excel para algunos materiales NO coincide
-  // con el promedio aritmético de su receta visible. El Excel calcula precios
-  // ponderados con un modelo térmico/humedad interno (ej: "Carbón Bituminoso"
-  // agregado 345,241 no produce el blend efectivo del horno; además el Excel
-  // aplica un consumo de 1.094344 Ton/Ton (pérdida) que el motor no modela).
-  // Despejando para que MP_calc = MP_excel = 274,818.56 con receta 20% Mixto
-  // (149,376) + 80% Bituminoso: P_bitum_eff = (274,818 - 0.20×149,376)/0.80
-  // = 306,179. Esto absorbe el factor de pérdida en el precio del bituminoso.
-  const PRICE_OVERRIDES: Record<string, number> = {
-    CARBITUMI: 306_179,  // blend efectivo Excel con factor de consumo 1.094344
-  };
+  // Overrides: precio plano de fallback cuando el blend real no puede calcularse
+  // en el fixture (ningún caso activo actualmente).
+  const PRICE_OVERRIDES: Record<string, number> = {};
   for (const [codigo, valor] of Object.entries(FALLBACK_PRICES)) {
     const mat = seed.materialesByCodigo.get(codigo);
     if (!mat) continue;
@@ -389,8 +403,15 @@ export function buildContextFromExcel(
       pctConsumoByKey.set(`${matCALT.id}|${pc.periodo}|${proveedor}`, {
         material_id: matCALT.id, proveedor, periodo: pc.periodo, porcentaje: pc.porcentaje,
       });
+    } else {
+      // Providers de blend (CDR, CARBITUMI): resolver por nombre y guardar con proveedor='default'
+      const provMat = resolveMaterial(seed, pc.material_nombre);
+      if (provMat) {
+        pctConsumoByKey.set(`${provMat.id}|${pc.periodo}|default`, {
+          material_id: provMat.id, proveedor: "default", periodo: pc.periodo, porcentaje: pc.porcentaje,
+        });
+      }
     }
-    // Otros % consumo (carbones, alternos) los dejamos por ahora — Fase 2.
   }
 
   // ─── Recetas: agrupar por (proceso, periodo) ───

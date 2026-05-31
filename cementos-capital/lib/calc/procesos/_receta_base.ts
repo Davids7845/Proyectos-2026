@@ -12,8 +12,21 @@
 // Usado por ORD 3 (Crudo), ORD 4 (Carbón), ORD 5 (Clinker), ORD 6 (Cemento UG),
 // ORD 7 (Cemento ART) y futuros procesos con la misma estructura.
 
-import { fn as calcMpReceta } from "@/lib/calc/formulas/costo_mp_receta";
+import { fn as calcMpReceta }   from "@/lib/calc/formulas/costo_mp_receta";
+import { fn as calcMezcla }     from "@/lib/calc/formulas/costo_mezcla_ponderada";
 import { logComponentesAuxiliares, produccionNormalizada, writeMovimientosMp } from "./_componentes_proceso";
+
+/**
+ * Materiales cuyo precio se evalúa como Σ(pct × precio_proveedor).
+ * Los códigos en cada array son materiales independientes en `materiales`
+ * cuyas pct están en `porcentajes_consumo` (proveedor='default').
+ * Solo se necesita especificar los que actualmente tienen precio plano
+ * incorrecto en precios_insumos.
+ */
+const PRECIO_BLEND_GROUPS: Record<string, string[]> = {
+  CDR:       ["CDR_FG_ANT","CDR_SV_CUN","CDR_SV_ANT","CDR_ECOLOG","CDR_ECOPOS","CDR_VEOLIA","CDR_GDI_CAL","CDR_GDI_ZIP"],
+  CARBITUMI: ["CARB_SANOHA","CARB_FOREHE","CARB_TOTTAL","CARB_SOLUCI","CARB_LASMAR"],
+};
 import type {
   CalcContext,
   CalcWriter,
@@ -167,6 +180,54 @@ export async function runRecetaProcess(
           nivel_jerarquia: 2,
         });
       } else {
+        const blendProviders = PRECIO_BLEND_GROUPS[mat.codigo];
+        if (blendProviders) {
+          // Precio blended: Σ(pct_proveedor × precio_proveedor) con trazabilidad
+          const blendItems: Array<{ nombre: string; precio: number; pct: number }> = [];
+          for (const provCode of blendProviders) {
+            const provMat = ctx.materialesByCodigo.get(provCode);
+            if (!provMat) continue;
+            const pctEntry  = ctx.pctConsumoByKey.get(`${provMat.id}|${periodo}|default`);
+            const precEntry = ctx.preciosByMatPeriodo.get(`${provMat.id}|${periodo}|`);
+            if (!pctEntry || !precEntry) continue;
+            blendItems.push({ nombre: provMat.nombre, precio: precEntry.precio, pct: pctEntry.porcentaje });
+          }
+          if (blendItems.length > 0) {
+            const blendResult = calcMezcla({ items_json: JSON.stringify(blendItems) });
+            precio = blendResult.valor;
+            precioCalcId = await writer.log({
+              calculo_tipo: "precio_componente_blended",
+              proceso_id: proceso.id,
+              material_id: mat.id,
+              periodo,
+              concepto: `Precio ${mat.nombre} (mezcla ponderada de proveedores)`,
+              valor_resultado: precio,
+              unidad: "COP/Ton",
+              formula_codigo: "COSTO_MEZCLA_PONDERADA_v1",
+              formula_expresion: blendResult.expresion_evaluada,
+              parametros_entrada: { items: blendItems },
+              nivel_jerarquia: 2,
+            });
+          } else {
+            // Fallback: sin datos de proveedores → precio plano desde precios_insumos
+            const pFb = ctx.preciosByMatPeriodo.get(`${mat.id}|${periodo}|`);
+            if (!pFb) throw new Error(`${errPrefix} ${periodo}: falta precio para ${mat.codigo}`);
+            precio = pFb.precio;
+            precioCalcId = await writer.log({
+              calculo_tipo: "precio_componente_directo",
+              proceso_id: proceso.id,
+              material_id: mat.id,
+              periodo,
+              concepto: `Precio ${mat.nombre} (precio plano — sin datos blend)`,
+              valor_resultado: precio,
+              unidad: "COP/Ton",
+              formula_codigo: "COSTO_PROCESO_SUMA_v1",
+              formula_expresion: `precio_plano=${precio}`,
+              parametros_entrada: { precio_plano: precio },
+              nivel_jerarquia: 2,
+            });
+          }
+        } else {
         const ki = `${mat.id}|${periodo}|`;
         // When a material has no price, try known equivalents. This covers the
         // common case where Excel imports caliza as CALTLVTRIT or yeso by provider.
@@ -199,6 +260,7 @@ export async function runRecetaProcess(
           parametros_entrada: { precio_directo: precio },
           nivel_jerarquia: 2,
         });
+        }
       }
     }
 
